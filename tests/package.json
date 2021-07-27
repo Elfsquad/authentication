@@ -1,0 +1,6 @@
+{
+    "dependencies": {
+      "@elfsquad/core": "file:../"
+    }
+  }
+  
