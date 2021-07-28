@@ -1,4 +1,4 @@
-import 'jasmine';
+import 'jest';
 import * as fetchMock from 'fetch-mock'
 import { AuthenticationContext } from '..';
 
@@ -21,9 +21,7 @@ describe('AuthenticationContext', function() {
 
             const headers = fetchMock.lastOptions().headers;
             expect(headers).not.toBeNull();
-            expect(headers).toEqual(jasmine.objectContaining({
-                'x-elfsquad-id': 'fake-tenant-id'
-            }));
+            expect(headers).toHaveProperty( 'x-elfsquad-id', 'fake-tenant-id');
         });
 
     });
