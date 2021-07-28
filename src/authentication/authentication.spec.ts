@@ -1,6 +1,6 @@
 import 'jasmine';
 import * as fetchMock from 'fetch-mock'
-import { AuthenticationContext } from '@elfsquad/core';
+import { AuthenticationContext } from '..';
 
 
 describe('AuthenticationContext', function() {
@@ -12,16 +12,13 @@ describe('AuthenticationContext', function() {
         });
 
         it('sets x-elfsquad-id header if anonymous authentication', async () => {
-            // Arrange
             const authenticationContext = new AuthenticationContext({
                 tenantId: 'fake-tenant-id'
             });
             fetchMock.get('/', 200)
 
-            // Act
             await authenticationContext.fetch('/');
 
-            // Assert
             const headers = fetchMock.lastOptions().headers;
             expect(headers).not.toBeNull();
             expect(headers).toEqual(jasmine.objectContaining({
