@@ -1,6 +1,6 @@
 export interface IAuthenticationOptions{
-    tenantId?: string | undefined;
-    clientId?: string | undefined;
-    redirectUri?: string | undefined;
+    clientId: string;
+    redirectUri: string;
     scope?: string | undefined;
+    loginUrl?: string | undefined;
 }
