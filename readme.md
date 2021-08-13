@@ -1,2 +1,1 @@
 # Elfsquad Authentication Library
-
