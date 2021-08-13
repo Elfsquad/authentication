@@ -5,7 +5,7 @@ import { AuthorizationRequest } from "@openid/appauth/built/authorization_reques
 import { AuthorizationNotifier } from "@openid/appauth/built/authorization_request_handler";
 import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_handler";
 import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
-import { BaseTokenRequestHandler, FetchRequestor } from "@openid/appauth";
+import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor } from "@openid/appauth";
 
 export class AuthenticationContext {
 
@@ -37,37 +37,8 @@ export class AuthenticationContext {
         // set notifier to deliver responses
         this.authorizationHandler.setAuthorizationNotifier(this.notifier);
         // set a listener to listen for authorization responses
-        this.notifier.setAuthorizationListener(async (request, response, error) => {
-            location.hash = '';
-            if (error) {
-                for (let onSignInRejector of this.onSignInRejectors){
-                    onSignInRejector(error);
-                }
-                return;
-            }
-
-            if (response) {
-                let tokenRequest = new TokenRequest({
-                    client_id: this.options.clientId,
-                    redirect_uri: this.options.redirectUri,
-                    grant_type: GRANT_TYPE_AUTHORIZATION_CODE,
-                    code: response.code,
-                    refresh_token: undefined,
-                    extras: { code_verifier: request.internal.code_verifier}
-                });
-            
-                if (!this.configuration){
-                    await this.fetchConfiguration();
-                }
-
-                this.accessTokenResponse = await this.tokenHandler
-                    .performTokenRequest(this.configuration, tokenRequest);
-                this.refreshToken = this.accessTokenResponse.refreshToken;
-                for (let onSignInResolver of this.onSignInResolvers){
-                    onSignInResolver();
-                }
-            }
-        });
+        this.notifier.setAuthorizationListener(async (request, response, error) => 
+            await this.onAuthorization(request, response,error));
 
         this.authorizationHandler.completeAuthorizationRequestIfPossible();
     }  
@@ -144,5 +115,37 @@ export class AuthenticationContext {
 
         // make the authorization request
         this.authorizationHandler.performAuthorizationRequest(this.configuration, request);
+    }
+
+    private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void>{
+        location.hash = '';
+        if (!!error) {
+            for (let onSignInRejector of this.onSignInRejectors){
+                onSignInRejector(error);
+            }
+            return;
+        }
+
+        if (!response) { return; }
+
+        let tokenRequest = new TokenRequest({
+            client_id: this.options.clientId,
+            redirect_uri: this.options.redirectUri,
+            grant_type: GRANT_TYPE_AUTHORIZATION_CODE,
+            code: response.code,
+            refresh_token: undefined,
+            extras: { code_verifier: request.internal.code_verifier}
+        });
+    
+        if (!this.configuration){
+            await this.fetchConfiguration();
+        }
+
+        this.accessTokenResponse = await this.tokenHandler
+            .performTokenRequest(this.configuration, tokenRequest);
+        this.refreshToken = this.accessTokenResponse.refreshToken;
+        for (let onSignInResolver of this.onSignInResolvers){
+            onSignInResolver();
+        }
     }
 }

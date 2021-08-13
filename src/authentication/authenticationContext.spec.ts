@@ -24,8 +24,6 @@ describe('AuthenticationContext', function() {
     describe('signOut', function() {
 
         it('should not be logged in', function(){
-
-            
             expect(authenticationContext.loggedIn()).toBe(true);
             authenticationContext.signOut();
             expect(authenticationContext.loggedIn()).toBe(false);
@@ -36,7 +34,6 @@ describe('AuthenticationContext', function() {
     describe('getAccessToken', function() {
 
         it('returns a accessToken if the accessToken is valid', async () => {
-
             const fakeAccessToken = 'FAKE_ACCESS_TOKEN';
             (authenticationContext as any).accessTokenResponse = {
                 isValid: () => true,
