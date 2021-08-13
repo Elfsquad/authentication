@@ -4,7 +4,7 @@ import { IAuthenticationOptions } from "./authenticationOptions";
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
 import { AuthorizationNotifier } from "@openid/appauth/built/authorization_request_handler";
 import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_handler";
-import { GRANT_TYPE_AUTHORIZATION_CODE, TokenRequest } from "@openid/appauth/built/token_request";
+import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
 import { BaseTokenRequestHandler, FetchRequestor } from "@openid/appauth";
 
 export class AuthenticationContext {
@@ -37,11 +37,8 @@ export class AuthenticationContext {
         // set notifier to deliver responses
         this.authorizationHandler.setAuthorizationNotifier(this.notifier);
         // set a listener to listen for authorization responses
-        console.log('setAuthorizationListener');
         this.notifier.setAuthorizationListener(async (request, response, error) => {
             location.hash = '';
-            
-            console.log('setAuthorizationListener request', request);
             if (error) {
                 for (let onSignInRejector of this.onSignInRejectors){
                     onSignInRejector(error);
@@ -49,7 +46,6 @@ export class AuthenticationContext {
                 return;
             }
 
-            console.log('authorization response', response);
             if (response) {
                 let tokenRequest = new TokenRequest({
                     client_id: this.options.clientId,
@@ -66,14 +62,9 @@ export class AuthenticationContext {
 
                 this.accessTokenResponse = await this.tokenHandler
                     .performTokenRequest(this.configuration, tokenRequest);
-
-
-                console.log('accessTokenResponse', this.accessTokenResponse);
-
-
-                console.log('onSignInResolvers', this.onSignInResolvers)
+                this.refreshToken = this.accessTokenResponse.refreshToken;
                 for (let onSignInResolver of this.onSignInResolvers){
-                    onSignInResolver
+                    onSignInResolver();
                 }
             }
         });
@@ -95,8 +86,45 @@ export class AuthenticationContext {
         this.makeAuthorizationRequest();
     }
 
+    public signOut() {
+        this.accessTokenResponse = null;
+    }
+
     public loggedIn(): boolean {
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
+    }
+
+    public getAccessToken(): Promise<string>{
+        if (!this.configuration) {
+            return Promise.reject("Unknown service configuration");
+          }
+
+          if (!this.refreshToken) {
+            return Promise.reject("Missing refreshToken.");
+          }
+
+          if (this.accessTokenResponse && this.accessTokenResponse.isValid()) {
+            return Promise.resolve(this.accessTokenResponse.accessToken);
+          }
+          
+         return this.refreshAccessToken();
+    }
+
+    private async refreshAccessToken(): Promise<string>{
+        const request = new TokenRequest({
+            client_id: this.options.clientId,
+            redirect_uri: this.options.redirectUri,
+            grant_type: GRANT_TYPE_REFRESH_TOKEN,
+            code: undefined,
+            refresh_token: this.refreshToken,
+            extras: undefined
+          });
+      
+        const response = await this.tokenHandler
+            .performTokenRequest(this.configuration, request)
+        this.accessTokenResponse = response;
+        this.refreshToken = response.refreshToken;
+        return response.accessToken;
     }
 
     private async fetchConfiguration(): Promise<void> {
