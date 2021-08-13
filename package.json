@@ -1,5 +1,5 @@
 {
-  "name": "@elfsquad/core",
+  "name": "@elfsquad/authentication",
   "version": "1.0.0",
   "description": "",
   "scripts": {
@@ -9,14 +9,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Elfsquad/core.git"
+    "url": "git+https://github.com/Elfsquad/authentication.git"
   },
   "author": "Elfsquad",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/Elfsquad/core/issues"
+    "url": "https://github.com/Elfsquad/authentication/issues"
   },
-  "homepage": "https://github.com/Elfsquad/core#readme",
+  "homepage": "https://github.com/Elfsquad/authentication#readme",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
