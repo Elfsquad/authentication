@@ -5,18 +5,26 @@ import { AuthenticationContext } from '..';
 
 describe('AuthenticationContext', function() {
 
+    var authenticationContext;
+
+    beforeEach(() => {
+        authenticationContext = new AuthenticationContext({
+            clientId: 'CLIENT_ID',
+            redirectUri: 'REDIRECT_URI'
+        });
+
+        (authenticationContext as any).accessTokenResponse = {
+            isValid: () => true
+        };
+
+        (authenticationContext as any).configuration = {};
+        (authenticationContext as any).refreshToken = {};
+    });
+
     describe('signOut', function() {
 
         it('should not be logged in', function(){
 
-            const authenticationContext = new AuthenticationContext({
-                clientId: 'CLIENT_ID',
-                redirectUri: 'REDIRECT_URI'
-            });
-
-            (authenticationContext as any).accessTokenResponse = {
-                isValid: () => true
-            };
             
             expect(authenticationContext.loggedIn()).toBe(true);
             authenticationContext.signOut();
@@ -29,13 +37,6 @@ describe('AuthenticationContext', function() {
 
         it('returns a accessToken if the accessToken is valid', async () => {
 
-            const authenticationContext = new AuthenticationContext({
-                clientId: 'CLIENT_ID',
-                redirectUri: 'REDIRECT_URI'
-            });
-            (authenticationContext as any).configuration = {};
-            (authenticationContext as any).refreshToken = {};
-
             const fakeAccessToken = 'FAKE_ACCESS_TOKEN';
             (authenticationContext as any).accessTokenResponse = {
                 isValid: () => true,
@@ -46,20 +47,14 @@ describe('AuthenticationContext', function() {
             expect(accessToken).toBe(fakeAccessToken);
         });
 
-        it('refreshes the accessToken if it is not longer valid', async() => {
-            const authenticationContext = new AuthenticationContext({
-                clientId: 'CLIENT_ID',
-                redirectUri: 'REDIRECT_URI'
-            });
-            (authenticationContext as any).configuration = {};
-            (authenticationContext as any).refreshToken = {};
+        it('refreshes the accessToken if it is not longer valid', () => {
 
             const refreshAccessTokenMock = jest.fn();
             (authenticationContext as any).refreshAccessToken = refreshAccessTokenMock;
 
-            await authenticationContext.getAccessToken();
-
-            expect(refreshAccessTokenMock).toHaveBeenCalled();
+            authenticationContext.getAccessToken().then(() => {
+                expect(refreshAccessTokenMock).toHaveBeenCalled();
+            });            
         });
 
     });
