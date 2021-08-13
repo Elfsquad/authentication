@@ -1,1 +1,1 @@
-# Elfsquad Core Library
+# Elfsquad Authentication Library
