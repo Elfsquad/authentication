@@ -18,7 +18,7 @@ The authentication library allows you to easily authenticate with the Elfsquad A
 ## Examples
 
 ```js
-import { AuthenticationContext } from '@elfsquad/authentication';
+import { AuthenticationContext } from "@elfsquad/authentication";
 
 var authenticationContext = new AuthenticationContext({
   clientId: "c2a349a9-02ea-4e1e-a59d-65870529f713",
