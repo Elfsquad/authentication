@@ -23,10 +23,10 @@ describe('AuthenticationContext', function() {
 
     describe('signOut', function() {
 
-        it('should not be logged in', function(){
-            expect(authenticationContext.loggedIn()).toBe(true);
+        it('should not be logged in', async() =>{
+            expect(await authenticationContext.isSignedIn()).toBe(true);
             authenticationContext.signOut();
-            expect(authenticationContext.loggedIn()).toBe(false);
+            expect(await authenticationContext.isSignedIn()).toBe(false);
         });
 
     });

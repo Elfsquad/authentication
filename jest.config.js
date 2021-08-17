@@ -3,6 +3,10 @@ module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
   globals: {
-    window: {},
+    window: {
+      localStorage: {
+        getItem: () => null
+      }
+    }
   },
 };
