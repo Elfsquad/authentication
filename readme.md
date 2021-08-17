@@ -13,7 +13,7 @@ The authentication library allows you to easily authenticate with the Elfsquad A
 
 - `signIn` starts the authentication flow.
 - `onSignIn` returns a promise that is called after the authentication flow has run successfully.
-- `loggedIn` returns true if the user is authenticated.
+- `isSignedIn` returns a promise with a boolean result that indicates if the user is signed in.
 
 ## Examples
 
@@ -28,8 +28,6 @@ var authenticationContext = new AuthenticationContext({
 authenticationContext
   .onSignIn()
   .then(() => {
-    console.log("onSignIn #1");
-
     authenticationContext.getAccessToken().then((accessToken) => {
       console.log("accessToken", accessToken);
     });
@@ -38,5 +36,9 @@ authenticationContext
     console.error(error);
   });
 
-authenticationContext.signIn();
+authenticationContext.isSignedIn().then((isSignedIn) => {
+  if (!isSignedIn) {
+    authenticationContext.signIn();
+  }
+});
 ```
