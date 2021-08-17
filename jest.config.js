@@ -5,8 +5,8 @@ module.exports = {
   globals: {
     window: {
       localStorage: {
-        getItem: () => null
-      }
-    }
+        getItem: () => null,
+      },
+    },
   },
 };
