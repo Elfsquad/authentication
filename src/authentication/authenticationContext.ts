@@ -53,8 +53,10 @@ export class AuthenticationContext {
 
     public async signIn(): Promise<void> {
         if (this.loggedIn()) { return; }
-        await this.fetchConfiguration();
-        this.makeAuthorizationRequest();
+        (async () => {
+            await this.fetchConfiguration();
+            this.makeAuthorizationRequest();
+        })();
     }
 
     public signOut() {
