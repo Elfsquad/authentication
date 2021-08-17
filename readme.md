@@ -37,7 +37,7 @@ authenticationContext
   });
 
 authenticationContext.isSignedIn().then((isSignedIn) => {
-  if (!isSignedIn){
+  if (!isSignedIn) {
     authenticationContext.signIn();
   }
 });
