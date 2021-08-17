@@ -2,7 +2,7 @@ import { TokenResponse } from "@openid/appauth/built/token_response";
 import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
 import { IAuthenticationOptions } from "./authenticationOptions";
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
-import { AuthorizationNotifier } from "@openid/appauth/built/authorization_request_handler";
+import { AuthorizationNotifier, AuthorizationRequestResponse } from "@openid/appauth/built/authorization_request_handler";
 import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_handler";
 import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
 import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor } from "@openid/appauth";
@@ -11,15 +11,15 @@ export class AuthenticationContext {
 
     private accessTokenResponse: TokenResponse | undefined;
     private configuration: AuthorizationServiceConfiguration;
-    private notifier: AuthorizationNotifier;
-    private authorizationHandler: RedirectRequestHandler;
+    private authorizationHandler: AuthorizationHandler;
     private tokenHandler: BaseTokenRequestHandler;
     private refreshToken: string;
     private loginUrl = 'https://login.elfsquad.io'
     private fetchRequestor: FetchRequestor;
-
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
+    private signedInResolvers: any[] = [];
+    private isInitialized = false;
 
     constructor(private options: IAuthenticationOptions) { 
         if (!options) { console.error('No authentication options were provided'); return; }     
@@ -30,17 +30,19 @@ export class AuthenticationContext {
 
         this.fetchRequestor = new FetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
+        this.authorizationHandler = new AuthorizationHandler();
 
-        this.notifier = new AuthorizationNotifier();
-        // uses a redirect flow
-        this.authorizationHandler = new RedirectRequestHandler();
-        // set notifier to deliver responses
-        this.authorizationHandler.setAuthorizationNotifier(this.notifier);
-        // set a listener to listen for authorization responses
-        this.notifier.setAuthorizationListener(async (request, response, error) => 
-            await this.onAuthorization(request, response,error));
+        this.authorizationHandler.completeAuthorizationRequest()
+        .then(async (result) => {
+            this.isInitialized = true;
+            if (!!result){
+                await this.onAuthorization(result.request, result.response, result.error);
+            }
 
-        this.authorizationHandler.completeAuthorizationRequestIfPossible();
+            for (let signedInResolver of this.signedInResolvers) {
+                signedInResolver(this.validateAccessTokenResponse());
+            }
+        });
     }  
 
     public onSignIn(): Promise<void> {
@@ -52,18 +54,29 @@ export class AuthenticationContext {
     }
 
     public async signIn(): Promise<void> {
-        if (this.loggedIn()) { return; }
-        (async () => {
-            await this.fetchConfiguration();
-            this.makeAuthorizationRequest();
-        })();
+        await this.fetchConfiguration();
+        this.makeAuthorizationRequest();
     }
 
     public signOut() {
         this.accessTokenResponse = null;
     }
 
-    public loggedIn(): boolean {
+    public isSignedIn(): Promise<boolean> {
+        // 
+        let promise = new Promise<boolean>((resolve, _) => {
+            if (this.isInitialized){
+                resolve(this.validateAccessTokenResponse());
+                return;
+            }
+
+            this.signedInResolvers.push(resolve);
+        });
+
+        return promise;
+    }
+
+    private validateAccessTokenResponse(): boolean{
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
     }
 
@@ -150,4 +163,12 @@ export class AuthenticationContext {
             onSignInResolver();
         }
     }
+}
+
+class AuthorizationHandler extends RedirectRequestHandler{
+
+
+    public completeAuthorizationRequest(): Promise<AuthorizationRequestResponse|null> {
+        return super.completeAuthorizationRequest();
+    }    
 }
