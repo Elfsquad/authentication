@@ -132,7 +132,7 @@ export class AuthenticationContext {
         this.authorizationHandler.performAuthorizationRequest(this.configuration, request);
     }
 
-    private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void>{
+    private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void>{   
         location.hash = '';
         if (!!error) {
             for (let onSignInRejector of this.onSignInRejectors){
@@ -149,8 +149,11 @@ export class AuthenticationContext {
             grant_type: GRANT_TYPE_AUTHORIZATION_CODE,
             code: response.code,
             refresh_token: undefined,
-            extras: { code_verifier: request.internal.code_verifier}
         });
+
+        if (request.internal?.code_verifier){
+            tokenRequest.extras = { code_verifier: request.internal.code_verifier};
+        }
     
         if (!this.configuration){
             await this.fetchConfiguration();

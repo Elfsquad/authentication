@@ -8,12 +8,6 @@ module.exports = {
         test: /\.tsx?$/,
         use: [
           {
-            loader: "expose-loader",
-            options: {
-              exposes: ["Elfsquad"],
-            },
-          },
-          {
             loader: "ts-loader",
           },
         ],
@@ -24,8 +18,14 @@ module.exports = {
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
   },
+  experiments: {
+    outputModule: true,
+  },
   output: {
     filename: "index.js",
     path: path.resolve(__dirname, "dist"),
+    library: {
+      type: 'module'
+    }
   },
 };
