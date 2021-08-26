@@ -8,5 +8,11 @@ module.exports = {
         getItem: () => null,
       },
     },
+    localStorage: {
+      getItem: () => null,
+      setItem: () => null,
+      removeItem: () => null
+    },
+    location: {}
   },
 };
