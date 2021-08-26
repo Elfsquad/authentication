@@ -118,7 +118,7 @@ export class AuthenticationContext {
             scope: this.options.scope,
             response_type: AuthorizationRequest.RESPONSE_TYPE_CODE,
             state: undefined,
-            extras: { 'prompt': 'login', 'access_type': 'offline', 'response_mode': 'fragment' }
+            extras: { 'access_type': 'offline', 'response_mode': 'fragment' }
         });
 
         // make the authorization request
