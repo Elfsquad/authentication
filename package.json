@@ -5,7 +5,8 @@
   "scripts": {
     "test": "jest",
     "coverage": "jest --collectCoverage",
-    "build": "webpack"
+    "build": "webpack",
+    "watch": "webpack --watch"
   },
   "repository": {
     "type": "git",
