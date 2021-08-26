@@ -51,6 +51,7 @@ export class AuthenticationContext {
     public signOut() {
         this.accessTokenResponse = null;
         TokenStore.deleteRefreshToken();
+        location.href = `${this.loginUrl}/logout`;
     }
 
     public isSignedIn(): Promise<boolean> {
