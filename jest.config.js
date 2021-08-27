@@ -11,8 +11,8 @@ module.exports = {
     localStorage: {
       getItem: () => null,
       setItem: () => null,
-      removeItem: () => null
+      removeItem: () => null,
     },
-    location: {}
+    location: {},
   },
 };
