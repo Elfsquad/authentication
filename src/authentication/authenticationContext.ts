@@ -49,9 +49,13 @@ export class AuthenticationContext {
     }
 
     public signOut() {
+        this.deleteTokens();
+        location.href = `${this.loginUrl}/logout`;
+    }
+
+    private deleteTokens() {
         this.accessTokenResponse = null;
         TokenStore.deleteRefreshToken();
-        location.href = `${this.loginUrl}/logout`;
     }
 
     public isSignedIn(): Promise<boolean> {
@@ -84,6 +88,23 @@ export class AuthenticationContext {
         return this.refreshAccessToken();
     }
 
+    public async getIdToken(): Promise<string> {
+        if (!this.configuration) {
+            return Promise.reject("Unknown service configuration");
+        }
+
+        if (this.accessTokenResponse && this.accessTokenResponse.isValid()) {
+            return Promise.resolve(this.accessTokenResponse.idToken);
+        }
+
+        if (!TokenStore.hasRefreshToken()) {
+            return Promise.reject("Missing refreshToken.");
+        }
+
+        await this.refreshAccessToken();
+        return Promise.resolve(this.accessTokenResponse.idToken);
+    }
+
     private validateAccessTokenResponse(): boolean {
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
     }
@@ -101,6 +122,8 @@ export class AuthenticationContext {
         const response = await this.tokenHandler
             .performTokenRequest(this.configuration, request)
         this.accessTokenResponse = response;
+        console.log('refreshAccessToken response', this.accessTokenResponse);
+
         TokenStore.saveRefreshToken(response.refreshToken);
         return response.accessToken;
     }
@@ -160,10 +183,15 @@ export class AuthenticationContext {
 
     private async initialize(): Promise<void> {
         if (TokenStore.hasRefreshToken()) {
+            console.log('hasRefreshToken');
             await this.fetchConfiguration();
             this.refreshAccessToken()
             .then(() => {
                 this.callOnSigInResolvers();   
+            })
+            .catch((e) => {
+                console.error('Failed to refresh access token', e);
+                this.deleteTokens();
             })
             .finally(() => {
                 this.callSignedInResolvers();
