@@ -122,8 +122,6 @@ export class AuthenticationContext {
         const response = await this.tokenHandler
             .performTokenRequest(this.configuration, request)
         this.accessTokenResponse = response;
-        console.log('refreshAccessToken response', this.accessTokenResponse);
-
         TokenStore.saveRefreshToken(response.refreshToken);
         return response.accessToken;
     }
@@ -183,7 +181,6 @@ export class AuthenticationContext {
 
     private async initialize(): Promise<void> {
         if (TokenStore.hasRefreshToken()) {
-            console.log('hasRefreshToken');
             await this.fetchConfiguration();
             this.refreshAccessToken()
             .then(() => {
