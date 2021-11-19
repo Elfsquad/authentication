@@ -1,6 +1,6 @@
 {
   "name": "@elfsquad/authentication",
-  "version": "1.0.10
+  "version": "1.0.10",
   "description": "",
   "scripts": {
     "test": "jest",
