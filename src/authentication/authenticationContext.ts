@@ -74,7 +74,7 @@ export class AuthenticationContext {
 
     public getAccessToken(): Promise<string> {
         if (!this.configuration) {
-            return Promise.reject("Unknown service configuration");
+            return null;
         }
 
         if (this.accessTokenResponse && this.accessTokenResponse.isValid()) {
@@ -191,6 +191,7 @@ export class AuthenticationContext {
                 this.deleteTokens();
             })
             .finally(() => {
+                this.isInitialized = true;
                 this.callSignedInResolvers();
             });
             
