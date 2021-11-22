@@ -72,7 +72,8 @@ export class AuthenticationContext {
         return promise;
     }
 
-    public getAccessToken(): Promise<string> {
+    private _refreshTokenPromise: Promise<string> = null;
+    public async getAccessToken(): Promise<string> {
         if (!this.configuration) {
             return null;
         }
@@ -85,7 +86,14 @@ export class AuthenticationContext {
             return Promise.reject("Missing refreshToken.");
         }
 
-        return this.refreshAccessToken();
+        if (this._refreshTokenPromise){
+            return this._refreshTokenPromise;
+        }
+
+        this._refreshTokenPromise = this.refreshAccessToken();
+        let accessToken = await this._refreshTokenPromise;
+        this._refreshTokenPromise = null;
+        return accessToken;
     }
 
     public async getIdToken(): Promise<string> {
