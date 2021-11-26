@@ -50,7 +50,7 @@ export class AuthenticationContext {
 
     public signOut() {
         this.deleteTokens();
-        location.href = `${this.loginUrl}/logout`;
+        location.href = `${this.loginUrl}/oauth2/sessions/logout`;
     }
 
     private deleteTokens() {
