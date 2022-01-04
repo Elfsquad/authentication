@@ -9,7 +9,6 @@ import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, Fet
 import { TokenStore } from "./tokenStore";
 
 export class AuthenticationContext {
-
     private accessTokenResponse: TokenResponse | undefined;
     private configuration: AuthorizationServiceConfiguration;
     private authorizationHandler: AuthorizationHandler;
@@ -36,6 +35,11 @@ export class AuthenticationContext {
     }
 
     public onSignIn(): Promise<void> {
+        // If the user is already authetnicated, resolve immediately
+        if (this.validateAccessTokenResponse()) {
+            return Promise.resolve();
+        }
+
         let promise = new Promise<void>((resolve, reject) => {
             this.onSignInResolvers.push(resolve);
             this.onSignInRejectors.push(reject);
@@ -56,10 +60,10 @@ export class AuthenticationContext {
     private deleteTokens() {
         this.accessTokenResponse = null;
         TokenStore.deleteRefreshToken();
+        TokenStore.deleteTokenResponse();
     }
 
     public isSignedIn(): Promise<boolean> {
-        // 
         let promise = new Promise<boolean>((resolve, _) => {
             if (this.isInitialized) {
                 resolve(this.validateAccessTokenResponse());
@@ -78,7 +82,7 @@ export class AuthenticationContext {
             return null;
         }
 
-        if (this.accessTokenResponse && this.accessTokenResponse.isValid()) {
+        if (this.validateAccessTokenResponse()) {
             return Promise.resolve(this.accessTokenResponse.accessToken);
         }
 
@@ -101,7 +105,7 @@ export class AuthenticationContext {
             return Promise.reject("Unknown service configuration");
         }
 
-        if (this.accessTokenResponse && this.accessTokenResponse.isValid()) {
+        if (this.validateAccessTokenResponse()) {
             return Promise.resolve(this.accessTokenResponse.idToken);
         }
 
@@ -114,6 +118,7 @@ export class AuthenticationContext {
     }
 
     private validateAccessTokenResponse(): boolean {
+        // `accessTokenResponse.isValid` uses a default buffer of 10 min
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
     }
 
@@ -129,8 +134,10 @@ export class AuthenticationContext {
 
         const response = await this.tokenHandler
             .performTokenRequest(this.configuration, request)
+
         this.accessTokenResponse = response;
         TokenStore.saveRefreshToken(response.refreshToken);
+        TokenStore.saveTokenResponse(response);
         return response.accessToken;
     }
 
@@ -184,10 +191,25 @@ export class AuthenticationContext {
         this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
         TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
+        TokenStore.saveTokenResponse(this.accessTokenResponse);
         this.callOnSigInResolvers();
     }
 
     private async initialize(): Promise<void> {
+        await this.fetchConfiguration();
+
+        if (TokenStore.hasTokenResponse()) {
+            this.accessTokenResponse = TokenStore.getTokenResponse();
+        }
+
+        // If the access token is still valid, we do not need to refresh
+        if (this.validateAccessTokenResponse()) {
+            this.isInitialized = true;
+            this.callOnSigInResolvers();
+            this.callSignedInResolvers();
+            return;
+        }
+
         if (TokenStore.hasRefreshToken()) {
             await this.fetchConfiguration();
             this.refreshAccessToken()

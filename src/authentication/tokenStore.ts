@@ -1,3 +1,4 @@
+import {TokenResponse} from "@openid/appauth";
 
 
 
@@ -21,4 +22,23 @@ export class TokenStore {
         localStorage.removeItem(this.REFRESH_TOKEN_KEY);
     } 
 
+    static hasTokenResponse(): boolean{
+        return !!localStorage.getItem('elfsquad_token_response');
+    }
+
+    static getTokenResponse(): TokenResponse {
+        const asString = localStorage.getItem('elfsquad_token_response');
+        const asObject = JSON.parse(asString);
+        return new TokenResponse(asObject);
+    }
+
+    static deleteTokenResponse(): void {
+        localStorage.removeItem('elfsquad_token_response');
+    }
+
+    static saveTokenResponse(tokenResponse: TokenResponse): void {
+        const asString = JSON.stringify(tokenResponse.toJson());
+        localStorage.setItem('elfsquad_token_response', asString);
+    }
 }
+
