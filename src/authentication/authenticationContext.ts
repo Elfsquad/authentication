@@ -110,7 +110,8 @@ export class AuthenticationContext {
     }
 
     private validateAccessTokenResponse(): boolean {
-        return !!this.accessTokenResponse && this.accessTokenResponse.isValid(0);
+        // `accessTokenResponse.isValid` uses a default buffer of 10 min
+        return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
     }
 
     private async refreshAccessToken(): Promise<string> {
