@@ -1,4 +1,4 @@
-import { TokenResponse } from "@openid/appauth/built/token_response";
+import { TokenResponse, TokenResponseJson } from "@openid/appauth/built/token_response";
 import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
 import { IAuthenticationOptions } from "./authenticationOptions";
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
@@ -36,6 +36,10 @@ export class AuthenticationContext {
     }
 
     public onSignIn(): Promise<void> {
+        if (this.isSignedIn()) {
+            return Promise.resolve();
+        }
+
         let promise = new Promise<void>((resolve, reject) => {
             this.onSignInResolvers.push(resolve);
             this.onSignInRejectors.push(reject);
@@ -56,10 +60,10 @@ export class AuthenticationContext {
     private deleteTokens() {
         this.accessTokenResponse = null;
         TokenStore.deleteRefreshToken();
+        TokenStore.deleteAccessToken();
     }
 
     public isSignedIn(): Promise<boolean> {
-        // 
         let promise = new Promise<boolean>((resolve, _) => {
             if (this.isInitialized) {
                 resolve(this.validateAccessTokenResponse());
@@ -71,6 +75,7 @@ export class AuthenticationContext {
 
         return promise;
     }
+
 
     private _refreshTokenPromise: Promise<string> = null;
     public async getAccessToken(): Promise<string> {
@@ -127,11 +132,13 @@ export class AuthenticationContext {
             extras: undefined
         });
 
-        const response = await this.tokenHandler
+        this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, request)
-        this.accessTokenResponse = response;
-        TokenStore.saveRefreshToken(response.refreshToken);
-        return response.accessToken;
+
+        this.saveAccessToken(this.accessTokenResponse);
+        this.saveRefreshToken(this.accessTokenResponse);
+
+        return this.accessTokenResponse.accessToken;
     }
 
     private async fetchConfiguration(): Promise<void> {
@@ -183,16 +190,34 @@ export class AuthenticationContext {
 
         this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
-        TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
-        this.callOnSigInResolvers();
+
+        this.saveAccessToken(this.accessTokenResponse);
+        this.saveRefreshToken(this.accessTokenResponse);
+        this.callOnSignInResolvers();
+    }
+
+    private saveAccessToken(response: TokenResponse) {
+        // `toJson` returns an object ready to be stringified.
+        const asJson = JSON.stringify(response.toJson());
+        TokenStore.saveAccessToken(asJson);
+    }
+
+    private saveRefreshToken(response: TokenResponse) {
+        TokenStore.saveRefreshToken(response.refreshToken);
     }
 
     private async initialize(): Promise<void> {
-        if (TokenStore.hasRefreshToken()) {
+        if (TokenStore.hasAccessToken()) {
+            const storedAccessTokenResponse = JSON.parse(TokenStore.getAccessToken());
+            this.accessTokenResponse = new TokenResponse(storedAccessTokenResponse as TokenResponseJson);
+            this.isInitialized = true;
+            this.callOnSignInResolvers()
+            this.callSignedInResolvers();
+        } else if (TokenStore.hasRefreshToken()) {
             await this.fetchConfiguration();
             this.refreshAccessToken()
             .then(() => {
-                this.callOnSigInResolvers();   
+                this.callOnSignInResolvers();   
             })
             .catch((e) => {
                 console.error('Failed to refresh access token', e);
@@ -205,7 +230,6 @@ export class AuthenticationContext {
             
             return;
         }
-
         this.completeAuthorizationRequest();
     }
 
@@ -226,7 +250,7 @@ export class AuthenticationContext {
         }
     }
 
-    private callOnSigInResolvers():void{
+    private callOnSignInResolvers():void{
         for (let onSignInResolver of this.onSignInResolvers) {
             onSignInResolver();
         }
