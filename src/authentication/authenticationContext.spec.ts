@@ -17,7 +17,7 @@ describe('AuthenticationContext', function() {
             isValid: () => true
         };
 
-        (authenticationContext as any).configuration = {};
+        (authenticationContext as any).configuration = {'something': 'here'};
         (authenticationContext as any).refreshToken = {};
     });
 
