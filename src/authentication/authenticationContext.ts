@@ -16,7 +16,9 @@ class CustomFetchRequestor {
   }
 
   public xhr<T>(settings: JQueryAjaxSettings): Promise<T> {
-    settings.xhrFields.withCredentials = true;
+    settings.xhrFields = {
+      withCredentials: true
+    };
     return this.requestor.xhr(settings);
   }
 }
