@@ -8,13 +8,26 @@ import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest }
 import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor, RevokeTokenRequest, TokenTypeHint } from "@openid/appauth";
 import { TokenStore } from "./tokenStore";
 
+class CustomFetchRequestor {
+  private requestor: FetchRequestor;
+
+  constructor() {
+    this.requestor = new FetchRequestor();
+  }
+
+  public xhr<T>(settings: JQueryAjaxSettings): Promise<T> {
+    settings.xhrFields.withCredentials = true;
+    return this.requestor.xhr(settings);
+  }
+}
+
 export class AuthenticationContext {
     private accessTokenResponse: TokenResponse | undefined;
     private configuration: AuthorizationServiceConfiguration;
     private authorizationHandler: AuthorizationHandler;
     private tokenHandler: BaseTokenRequestHandler;
     private loginUrl = 'https://login.elfsquad.io'
-    private fetchRequestor: FetchRequestor;
+    private fetchRequestor: CustomFetchRequestor;
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
     private signedInResolvers: any[] = [];
@@ -27,7 +40,7 @@ export class AuthenticationContext {
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
 
-        this.fetchRequestor = new FetchRequestor();
+        this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
         this.authorizationHandler = new AuthorizationHandler();
 
