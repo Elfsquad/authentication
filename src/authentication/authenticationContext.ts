@@ -135,7 +135,7 @@ export class AuthenticationContext {
         }
 
         if (!TokenStore.hasRefreshToken()) {
-            return Promise.reject("Missing refreshToken.");
+            return Promise.resolve(null);
         }
 
         if (this._refreshTokenPromise){
@@ -150,7 +150,8 @@ export class AuthenticationContext {
 
     public async getIdToken(): Promise<string> {
         if (!this.configuration) {
-            return Promise.reject("Unknown service configuration");
+            console.error('@elfsquad/authentication: No service configuration found');
+            return Promise.resolve(null);
         }
 
         if (this.validateAccessTokenResponse()) {
@@ -158,7 +159,8 @@ export class AuthenticationContext {
         }
 
         if (!TokenStore.hasRefreshToken()) {
-            return Promise.reject("Missing refreshToken.");
+            console.log('@elfsquad/authentication: No refresh token found');
+            return Promise.resolve(null);
         }
 
         await this.refreshAccessToken();
@@ -240,7 +242,7 @@ export class AuthenticationContext {
             .performTokenRequest(this.configuration, tokenRequest);
         TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
         TokenStore.saveTokenResponse(this.accessTokenResponse);
-        this.callOnSigInResolvers();
+        this.callSignInResolvers();
     }
 
     private async initialize(): Promise<void> {
@@ -253,7 +255,7 @@ export class AuthenticationContext {
         // If the access token is still valid, we do not need to refresh
         if (this.validateAccessTokenResponse()) {
             this.isInitialized = true;
-            this.callOnSigInResolvers();
+            this.callSignInResolvers();
             this.callSignedInResolvers();
             return;
         }
@@ -262,7 +264,7 @@ export class AuthenticationContext {
             await this.fetchConfiguration();
             this.refreshAccessToken()
             .then(() => {
-                this.callOnSigInResolvers();   
+                this.callSignInResolvers();   
             })
             .catch((e) => {
                 console.error('Failed to refresh access token', e);
@@ -296,7 +298,7 @@ export class AuthenticationContext {
         }
     }
 
-    private callOnSigInResolvers():void{
+    private callSignInResolvers():void{
         for (let onSignInResolver of this.onSignInResolvers) {
             onSignInResolver();
         }
