@@ -5,8 +5,23 @@ import { AuthorizationRequest } from "@openid/appauth/built/authorization_reques
 import { AuthorizationRequestResponse } from "@openid/appauth/built/authorization_request_handler";
 import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_handler";
 import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
-import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor } from "@openid/appauth";
+import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor, RevokeTokenRequest, TokenTypeHint } from "@openid/appauth";
 import { TokenStore } from "./tokenStore";
+
+class CustomFetchRequestor {
+  private requestor: FetchRequestor;
+
+  constructor() {
+    this.requestor = new FetchRequestor();
+  }
+
+  public xhr<T>(settings: JQueryAjaxSettings): Promise<T> {
+    settings.xhrFields = {
+      withCredentials: true
+    };
+    return this.requestor.xhr(settings);
+  }
+}
 
 export class AuthenticationContext {
     private accessTokenResponse: TokenResponse | undefined;
@@ -14,7 +29,7 @@ export class AuthenticationContext {
     private authorizationHandler: AuthorizationHandler;
     private tokenHandler: BaseTokenRequestHandler;
     private loginUrl = 'https://login.elfsquad.io'
-    private fetchRequestor: FetchRequestor;
+    private fetchRequestor: CustomFetchRequestor;
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
     private signedInResolvers: any[] = [];
@@ -27,7 +42,7 @@ export class AuthenticationContext {
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
 
-        this.fetchRequestor = new FetchRequestor();
+        this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
         this.authorizationHandler = new AuthorizationHandler();
 
@@ -53,14 +68,47 @@ export class AuthenticationContext {
     }
 
     public signOut() {
-        this.deleteTokens();
-        location.href = `${this.loginUrl}/logout`;
+        this.revokeTokens()
+          .then(_ => {
+            this.deleteTokens();
+            this.endSession();
+          });
     }
 
     private deleteTokens() {
         this.accessTokenResponse = null;
         TokenStore.deleteRefreshToken();
         TokenStore.deleteTokenResponse();
+    }
+
+    private revokeTokens(): Promise<any> {
+      let revokeRefreshToken = null;
+      let revokeAccessToken = null;
+      if (TokenStore.hasRefreshToken()) {
+        this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
+      }
+      if (TokenStore.hasTokenResponse()) {
+        this.revokeToken(TokenStore.getTokenResponse().accessToken, 'access_token');
+      }
+      return Promise.all([revokeRefreshToken, revokeAccessToken]);
+    }
+
+    private async revokeToken(token: string, tokenType: TokenTypeHint) {
+      const request = new RevokeTokenRequest({
+        token: token,
+        token_type_hint: tokenType,
+        client_id: this.options.clientId
+      });
+
+      const response = await this.tokenHandler.performRevokeTokenRequest(this.configuration, request);
+      console.log(tokenType, response);
+      if (!response) {
+        console.error(`Revoke token request for token '${tokenType}' failed`);
+      }
+    }
+
+    private endSession() {
+      window.location.href = this.configuration.endSessionEndpoint;
     }
 
     public isSignedIn(): Promise<boolean> {
