@@ -9,18 +9,18 @@ import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, Fet
 import { TokenStore } from "./tokenStore";
 
 class CustomFetchRequestor {
-  private requestor: FetchRequestor;
+    private requestor: FetchRequestor;
 
-  constructor() {
-    this.requestor = new FetchRequestor();
-  }
+    constructor() {
+        this.requestor = new FetchRequestor();
+    }
 
-  public xhr<T>(settings: JQueryAjaxSettings): Promise<T> {
-    settings.xhrFields = {
-      withCredentials: true
-    };
-    return this.requestor.xhr(settings);
-  }
+    public xhr<T>(settings: JQueryAjaxSettings): Promise<T> {
+        settings.xhrFields = {
+            withCredentials: true
+        };
+        return this.requestor.xhr(settings);
+    }
 }
 
 export class AuthenticationContext {
@@ -69,10 +69,10 @@ export class AuthenticationContext {
 
     public signOut() {
         this.revokeTokens()
-          .then(_ => {
-            this.deleteTokens();
-            this.endSession();
-          });
+            .then(_ => {
+                this.deleteTokens();
+                this.endSession();
+            });
     }
 
     private deleteTokens() {
@@ -82,33 +82,33 @@ export class AuthenticationContext {
     }
 
     private revokeTokens(): Promise<any> {
-      let revokeRefreshToken = null;
-      let revokeAccessToken = null;
-      if (TokenStore.hasRefreshToken()) {
-        this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
-      }
-      if (TokenStore.hasTokenResponse()) {
-        this.revokeToken(TokenStore.getTokenResponse().accessToken, 'access_token');
-      }
-      return Promise.all([revokeRefreshToken, revokeAccessToken]);
+        let revokeRefreshToken = null;
+        let revokeAccessToken = null;
+        if (TokenStore.hasRefreshToken()) {
+            this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
+        }
+        if (TokenStore.hasTokenResponse()) {
+            this.revokeToken(TokenStore.getTokenResponse().accessToken, 'access_token');
+        }
+        return Promise.all([revokeRefreshToken, revokeAccessToken]);
     }
 
     private async revokeToken(token: string, tokenType: TokenTypeHint) {
-      const request = new RevokeTokenRequest({
-        token: token,
-        token_type_hint: tokenType,
-        client_id: this.options.clientId
-      });
+        const request = new RevokeTokenRequest({
+            token: token,
+            token_type_hint: tokenType,
+            client_id: this.options.clientId
+        });
 
-      const response = await this.tokenHandler.performRevokeTokenRequest(this.configuration, request);
-      console.log(tokenType, response);
-      if (!response) {
-        console.error(`Revoke token request for token '${tokenType}' failed`);
-      }
+        const response = await this.tokenHandler.performRevokeTokenRequest(this.configuration, request);
+        console.log(tokenType, response);
+        if (!response) {
+            console.error(`Revoke token request for token '${tokenType}' failed`);
+        }
     }
 
     private endSession() {
-      window.location.href = this.configuration.endSessionEndpoint;
+        window.location.href = this.configuration.endSessionEndpoint;
     }
 
     public isSignedIn(): Promise<boolean> {
@@ -138,7 +138,7 @@ export class AuthenticationContext {
             return Promise.resolve(null);
         }
 
-        if (this._refreshTokenPromise){
+        if (this._refreshTokenPromise) {
             return this._refreshTokenPromise;
         }
 
@@ -212,6 +212,7 @@ export class AuthenticationContext {
     }
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
+        let locationVariable = window.location.href;
         location.hash = '';
         if (!!error) {
             for (let onSignInRejector of this.onSignInRejectors) {
@@ -226,7 +227,7 @@ export class AuthenticationContext {
             client_id: this.options.clientId,
             redirect_uri: this.options.redirectUri,
             grant_type: GRANT_TYPE_AUTHORIZATION_CODE,
-            code: response.code,
+            code: response.code ?? new RegExp('#code=(.*?)&').exec(locationVariable)[1],
             refresh_token: undefined,
         });
 
@@ -263,18 +264,18 @@ export class AuthenticationContext {
         if (TokenStore.hasRefreshToken()) {
             await this.fetchConfiguration();
             this.refreshAccessToken()
-            .then(() => {
-                this.callSignInResolvers();   
-            })
-            .catch((e) => {
-                console.error('Failed to refresh access token', e);
-                this.deleteTokens();
-            })
-            .finally(() => {
-                this.isInitialized = true;
-                this.callSignedInResolvers();
-            });
-            
+                .then(() => {
+                    this.callSignInResolvers();
+                })
+                .catch((e) => {
+                    console.error('Failed to refresh access token', e);
+                    this.deleteTokens();
+                })
+                .finally(() => {
+                    this.isInitialized = true;
+                    this.callSignedInResolvers();
+                });
+
             return;
         }
 
@@ -298,7 +299,7 @@ export class AuthenticationContext {
         }
     }
 
-    private callSignInResolvers():void{
+    private callSignInResolvers(): void {
         for (let onSignInResolver of this.onSignInResolvers) {
             onSignInResolver();
         }
