@@ -82,15 +82,24 @@ export class AuthenticationContext {
     }
 
     private revokeTokens(): Promise<any> {
-        let revokeRefreshToken = null;
-        let revokeAccessToken = null;
-        if (TokenStore.hasRefreshToken()) {
-            this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
+        return Promise.all([
+          this.revokeRefreshToken(),
+          this.revokeAccessToken(),
+        ]);
+    }
+
+    private revokeRefreshToken(): Promise<any> {
+        if (!TokenStore.hasRefreshToken()) {
+          return Promise.resolve();
         }
-        if (TokenStore.hasTokenResponse()) {
-            this.revokeToken(TokenStore.getTokenResponse().accessToken, 'access_token');
+        return this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
+    }
+
+    private revokeAccessToken(): Promise<any> {
+        if (!TokenStore.hasTokenResponse()) {
+          return Promise.resolve();
         }
-        return Promise.all([revokeRefreshToken, revokeAccessToken]);
+        return this.revokeToken(TokenStore.getTokenResponse().accessToken, 'access_token');
     }
 
     private async revokeToken(token: string, tokenType: TokenTypeHint) {
