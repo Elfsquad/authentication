@@ -30,9 +30,12 @@ export class AuthenticationContext {
     private tokenHandler: BaseTokenRequestHandler;
     private loginUrl = 'https://login.elfsquad.io'
     private fetchRequestor: CustomFetchRequestor;
+
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
     private signedInResolvers: any[] = [];
+    private onInitializedResolvers: any[] = [];
+
     private isInitialized = false;
 
     constructor(private options: IAuthenticationOptions) {
@@ -135,7 +138,13 @@ export class AuthenticationContext {
 
     private _refreshTokenPromise: Promise<string> = null;
     public async getAccessToken(): Promise<string> {
-        await this.waitFor(() => this.isInitialized);
+        if (!this.isInitialized) {
+            return new Promise<string>((resolve, _) => {
+                this.onInitializedResolvers.push(() => {
+                    resolve(this.getAccessToken());
+                });
+            });
+        }
 
         if (this.validateAccessTokenResponse()) {
             return Promise.resolve(this.accessTokenResponse.accessToken);
@@ -269,6 +278,7 @@ export class AuthenticationContext {
             this.isInitialized = true;
             this.callSignInResolvers();
             this.callSignedInResolvers();
+            this.callOnInitializedResolvers();
             return;
         }
 
@@ -284,6 +294,7 @@ export class AuthenticationContext {
                 })
                 .finally(() => {
                     this.isInitialized = true;
+                    this.callOnInitializedResolvers();
                     this.callSignedInResolvers();
                 });
 
@@ -300,6 +311,7 @@ export class AuthenticationContext {
                 if (!!result) {
                     await this.onAuthorization(result.request, result.response, result.error);
                 }
+                this.callOnInitializedResolvers();
                 this.callSignedInResolvers();
             });
     }
@@ -316,12 +328,10 @@ export class AuthenticationContext {
         }
     }
 
-    private sleep(ms: number): Promise<void> {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    private async waitFor(f: () => boolean): Promise<void> {
-      while(!f()) await this.sleep(200);
+    private callOnInitializedResolvers(): void {
+        for (let onInitializedResolver of this.onInitializedResolvers) {
+            onInitializedResolver();
+        }
     }
 }
 
