@@ -135,9 +135,7 @@ export class AuthenticationContext {
 
     private _refreshTokenPromise: Promise<string> = null;
     public async getAccessToken(): Promise<string> {
-        if (!this.configuration) {
-            return null;
-        }
+        await this.waitFor(() => this.isInitialized);
 
         if (this.validateAccessTokenResponse()) {
             return Promise.resolve(this.accessTokenResponse.accessToken);
@@ -182,6 +180,10 @@ export class AuthenticationContext {
     }
 
     private async refreshAccessToken(): Promise<string> {
+        if (!this.configuration) {
+            return null;
+        }
+
         const request = new TokenRequest({
             client_id: this.options.clientId,
             redirect_uri: this.options.redirectUri,
@@ -312,6 +314,14 @@ export class AuthenticationContext {
         for (let onSignInResolver of this.onSignInResolvers) {
             onSignInResolver();
         }
+    }
+
+    private sleep(ms: number): Promise<void> {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private async waitFor(f: () => boolean): Promise<void> {
+      while(!f()) await this.sleep(200);
     }
 }
 
