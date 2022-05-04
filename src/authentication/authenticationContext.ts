@@ -34,7 +34,6 @@ export class AuthenticationContext {
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
     private signedInResolvers: any[] = [];
-    private onInitializedResolvers: any[] = [];
 
     private isInitialized = false;
 
@@ -272,7 +271,6 @@ export class AuthenticationContext {
             this.isInitialized = true;
             this.callSignInResolvers();
             this.callSignedInResolvers();
-            this.callOnInitializedResolvers();
             return;
         }
 
@@ -288,7 +286,6 @@ export class AuthenticationContext {
                 })
                 .finally(() => {
                     this.isInitialized = true;
-                    this.callOnInitializedResolvers();
                     this.callSignedInResolvers();
                 });
 
@@ -305,7 +302,6 @@ export class AuthenticationContext {
                 if (!!result) {
                     await this.onAuthorization(result.request, result.response, result.error);
                 }
-                this.callOnInitializedResolvers();
                 this.callSignedInResolvers();
             });
     }
