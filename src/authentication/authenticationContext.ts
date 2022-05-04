@@ -138,13 +138,7 @@ export class AuthenticationContext {
 
     private _refreshTokenPromise: Promise<string> = null;
     public async getAccessToken(): Promise<string> {
-        if (!this.isInitialized) {
-            return new Promise<string>((resolve, _) => {
-                this.onInitializedResolvers.push(() => {
-                    resolve(this.getAccessToken());
-                });
-            });
-        }
+        await this.waitFor(() => this.isInitialized);
 
         if (this.validateAccessTokenResponse()) {
             return Promise.resolve(this.accessTokenResponse.accessToken);
@@ -328,10 +322,12 @@ export class AuthenticationContext {
         }
     }
 
-    private callOnInitializedResolvers(): void {
-        for (let onInitializedResolver of this.onInitializedResolvers) {
-            onInitializedResolver();
-        }
+    private sleep(ms: number): Promise<void> {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    private async waitFor(f: () => boolean): Promise<void> {
+      while(!f()) await this.sleep(200);
     }
 }
 
