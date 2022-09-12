@@ -69,11 +69,11 @@ export class AuthenticationContext {
         this.makeAuthorizationRequest();
     }
 
-    public signOut() {
+    public signOut(postLogoutRedirectUri: string | null = null) {
         this.revokeTokens()
             .then(_ => {
                 this.deleteTokens();
-                this.endSession();
+                this.endSession(postLogoutRedirectUri);
             });
     }
 
@@ -118,8 +118,12 @@ export class AuthenticationContext {
         }
     }
 
-    private endSession() {
-        window.location.href = this.configuration.endSessionEndpoint;
+    private endSession(postLogoutRedirectUri: string | null) {
+        const url = new URL(this.configuration.endSessionEndpoint); 
+        if (postLogoutRedirectUri) {
+            url.searchParams.append("post_logout_redirect_uri", postLogoutRedirectUri);
+        }
+        window.location.href = url.toString();
     }
 
     public isSignedIn(): Promise<boolean> {
