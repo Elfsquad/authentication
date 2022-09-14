@@ -71,9 +71,9 @@ export class AuthenticationContext {
 
     public signOut(postLogoutRedirectUri: string | null = null) {
         this.revokeTokens()
-            .then(_ => {
+            .then(async () => {
+                await this.endSession(postLogoutRedirectUri);
                 this.deleteTokens();
-                this.endSession(postLogoutRedirectUri);
             });
     }
 
@@ -118,10 +118,11 @@ export class AuthenticationContext {
         }
     }
 
-    private endSession(postLogoutRedirectUri: string | null) {
+    private async endSession(postLogoutRedirectUri: string | null): Promise<void> {
         const url = new URL(this.configuration.endSessionEndpoint); 
         if (postLogoutRedirectUri) {
             url.searchParams.append("post_logout_redirect_uri", postLogoutRedirectUri);
+            url.searchParams.append("id_token_hint", await this.getIdToken());
         }
         window.location.href = url.toString();
     }
