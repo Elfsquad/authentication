@@ -1,5 +1,6 @@
 import { TokenResponse } from "@openid/appauth/built/token_response";
 import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
+import { IOauthOptions } from "./oauthOptions";
 import { IAuthenticationOptions } from "./authenticationOptions";
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
 import { AuthorizationRequestResponse } from "@openid/appauth/built/authorization_request_handler";
@@ -66,9 +67,9 @@ export class AuthenticationContext {
         return promise;
     }
 
-    public async signIn(): Promise<void> {
+    public async signIn(options: OauthOptions = null): Promise<void> {
         await this.fetchConfiguration();
-        this.makeAuthorizationRequest();
+        this.makeAuthorizationRequest(options);
     }
 
     public signOut(postLogoutRedirectUri: string | null = null) {
@@ -227,14 +228,16 @@ export class AuthenticationContext {
         this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
     }
 
-    private makeAuthorizationRequest() {
+    private makeAuthorizationRequest(options: object) {
+        const extras = { 'access_type': 'offline', 'response_mode': 'fragment' };
+        // create a request
         const request = new AuthorizationRequest({
             client_id: this.options.clientId,
             redirect_uri: this.options.redirectUri,
             scope: this.options.scope,
             response_type: AuthorizationRequest.RESPONSE_TYPE_CODE,
             state: this.state,
-            extras: { 'access_type': 'offline', 'response_mode': 'fragment' }
+            extras: { ...extras, ...options }
         });
 
         // make the authorization request
