@@ -1,5 +1,6 @@
 import { TokenResponse } from "@openid/appauth/built/token_response";
 import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
+import { IOauthOptions } from "./oauthOptions";
 import { IAuthenticationOptions } from "./authenticationOptions";
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
 import { AuthorizationRequestResponse } from "@openid/appauth/built/authorization_request_handler";
@@ -64,9 +65,9 @@ export class AuthenticationContext {
         return promise;
     }
 
-    public async signIn(): Promise<void> {
+    public async signIn(options: OauthOptions = null): Promise<void> {
         await this.fetchConfiguration();
-        this.makeAuthorizationRequest();
+        this.makeAuthorizationRequest(options);
     }
 
     public signOut(postLogoutRedirectUri: string | null = null) {
@@ -112,7 +113,6 @@ export class AuthenticationContext {
         });
 
         const response = await this.tokenHandler.performRevokeTokenRequest(this.configuration, request);
-        console.log(tokenType, response);
         if (!response) {
             console.error(`Revoke token request for token '${tokenType}' failed`);
         }
@@ -214,7 +214,8 @@ export class AuthenticationContext {
         this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
     }
 
-    private makeAuthorizationRequest() {
+    private makeAuthorizationRequest(options: object) {
+        const extras = { 'access_type': 'offline', 'response_mode': 'fragment' };
         // create a request
         const request = new AuthorizationRequest({
             client_id: this.options.clientId,
@@ -222,7 +223,7 @@ export class AuthenticationContext {
             scope: this.options.scope,
             response_type: AuthorizationRequest.RESPONSE_TYPE_CODE,
             state: undefined,
-            extras: { 'access_type': 'offline', 'response_mode': 'fragment' }
+            extras: { ...extras, ...options }
         });
 
         // make the authorization request
@@ -231,6 +232,7 @@ export class AuthenticationContext {
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         let locationVariable = window.location.href;
+
         location.hash = '';
         if (!!error) {
             for (let onSignInRejector of this.onSignInRejectors) {
