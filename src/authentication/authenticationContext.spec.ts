@@ -5,7 +5,7 @@ import { AuthenticationContext } from '..';
 
 describe('AuthenticationContext', function() {
 
-    var authenticationContext;
+    let authenticationContext;
 
     beforeEach(() => {
         authenticationContext = new AuthenticationContext({
