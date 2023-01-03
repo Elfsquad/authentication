@@ -67,7 +67,7 @@ export class AuthenticationContext {
         return promise;
     }
 
-    public async signIn(options: OauthOptions = null): Promise<void> {
+    public async signIn(options: IOauthOptions = null): Promise<void> {
         await this.fetchConfiguration();
         this.makeAuthorizationRequest(options);
     }
