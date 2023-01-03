@@ -38,6 +38,8 @@ export class AuthenticationContext {
 
     private isInitialized = false;
 
+    private state: string;
+
     constructor(private options: IAuthenticationOptions) {
         if (!options) { console.error('No authentication options were provided'); return; }
         if (!options.clientId) { console.error('No client id provided'); return; }
@@ -181,6 +183,18 @@ export class AuthenticationContext {
         return Promise.resolve(this.accessTokenResponse.idToken);
     }
 
+    public setState(data: any) {
+      this.state = (Math.random() + 1).toString(36).substring(2);
+      localStorage.setItem(`elfsquad-${this.state}`, JSON.stringify(data));
+    }
+
+    public getState(): any | null {
+      const val = localStorage.getItem(`elfsquad-${this.state}`);
+      if (val == null)
+        return null;
+      return JSON.parse(val);
+    }
+
     private validateAccessTokenResponse(): boolean {
         // `accessTokenResponse.isValid` uses a default buffer of 10 min
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
@@ -222,7 +236,7 @@ export class AuthenticationContext {
             redirect_uri: this.options.redirectUri,
             scope: this.options.scope,
             response_type: AuthorizationRequest.RESPONSE_TYPE_CODE,
-            state: undefined,
+            state: this.state,
             extras: { ...extras, ...options }
         });
 
@@ -231,7 +245,8 @@ export class AuthenticationContext {
     }
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
-        let locationVariable = window.location.href;
+        const locationVariable = window.location.href;
+        this.state = new RegExp('state=(.*)(&|$)').exec(locationVariable)[1]
 
         location.hash = '';
         if (!!error) {
