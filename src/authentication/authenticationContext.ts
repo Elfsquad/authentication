@@ -246,7 +246,7 @@ export class AuthenticationContext {
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
-        this.state = new RegExp('state=(.*)(&|$)').exec(locationVariable)[1]
+        this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)[1]
 
         location.hash = '';
         if (!!error) {
