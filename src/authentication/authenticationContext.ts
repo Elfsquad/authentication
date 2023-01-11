@@ -121,10 +121,13 @@ export class AuthenticationContext {
     }
 
     private async endSession(postLogoutRedirectUri: string | null): Promise<void> {
-        const url = new URL(this.configuration.endSessionEndpoint); 
+        const url = new URL(this.configuration.endSessionEndpoint);
+        const idTokenHint = await this.getIdToken();
         if (postLogoutRedirectUri) {
             url.searchParams.append("post_logout_redirect_uri", postLogoutRedirectUri);
-            url.searchParams.append("id_token_hint", await this.getIdToken());
+        }
+        if (idTokenHint) {
+            url.searchParams.append("id_token_hint", idTokenHint);
         }
         window.location.href = url.toString();
     }
