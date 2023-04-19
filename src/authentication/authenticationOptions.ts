@@ -3,4 +3,5 @@ export interface IAuthenticationOptions{
     redirectUri: string;
     scope?: string | undefined;
     loginUrl?: string | undefined;
+    responseMode?: 'query' | 'fragment' | undefined;
 }

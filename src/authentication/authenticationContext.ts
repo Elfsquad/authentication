@@ -1,12 +1,13 @@
-import { TokenResponse } from "@openid/appauth/built/token_response";
-import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
-import { IOauthOptions } from "./oauthOptions";
-import { IAuthenticationOptions } from "./authenticationOptions";
+import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, BasicQueryStringUtils, DefaultCrypto, FetchRequestor, LocalStorageBackend, RevokeTokenRequest, TokenTypeHint } from "@openid/appauth";
+import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
+
 import { AuthorizationRequest } from "@openid/appauth/built/authorization_request";
 import { AuthorizationRequestResponse } from "@openid/appauth/built/authorization_request_handler";
+import { AuthorizationServiceConfiguration } from "@openid/appauth/built/authorization_service_configuration";
+import { IAuthenticationOptions } from "./authenticationOptions";
+import { IOauthOptions } from "./oauthOptions";
 import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_handler";
-import { GRANT_TYPE_AUTHORIZATION_CODE, GRANT_TYPE_REFRESH_TOKEN, TokenRequest } from "@openid/appauth/built/token_request";
-import { AuthorizationError, AuthorizationResponse, BaseTokenRequestHandler, FetchRequestor, RevokeTokenRequest, TokenTypeHint } from "@openid/appauth";
+import { TokenResponse } from "@openid/appauth/built/token_response";
 import { TokenStore } from "./tokenStore";
 
 class CustomFetchRequestor {
@@ -45,12 +46,12 @@ export class AuthenticationContext {
         if (!options.clientId) { console.error('No client id provided'); return; }
         if (!options.redirectUri) { console.error('No redirect uri provided'); return; }
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
+        if (!options.responseMode) { options.responseMode = 'fragment'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
 
         this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
-        this.authorizationHandler = new AuthorizationHandler();
-
+        this.authorizationHandler = new AuthorizationHandler(options.responseMode);
         this.initialize();
     }
 
@@ -232,7 +233,7 @@ export class AuthenticationContext {
     }
 
     private makeAuthorizationRequest(options: object) {
-        const extras = { 'access_type': 'offline', 'response_mode': 'fragment' };
+        const extras = { 'access_type': 'offline', 'response_mode': this.options.responseMode };
         // create a request
         const request = new AuthorizationRequest({
             client_id: this.options.clientId,
@@ -261,11 +262,18 @@ export class AuthenticationContext {
 
         if (!response) { return; }
 
+        let code = response.code;
+        if (!code){
+            code = this.options.responseMode == 'fragment'
+                ? new RegExp('#code=(.*?)&').exec(locationVariable)[1]
+                : new URL(location.href).searchParams.get('code');
+        }
+
         let tokenRequest = new TokenRequest({
             client_id: this.options.clientId,
             redirect_uri: this.options.redirectUri,
             grant_type: GRANT_TYPE_AUTHORIZATION_CODE,
-            code: response.code ?? new RegExp('#code=(.*?)&').exec(locationVariable)[1],
+            code: code,
             refresh_token: undefined,
         });
 
@@ -352,7 +360,19 @@ export class AuthenticationContext {
     }
 }
 
+class NoHashQueryStringUtils extends BasicQueryStringUtils {
+    constructor(private responseMode: 'query' | 'fragment') { super(); }
+
+    parse(input) {
+      return super.parse(input, this.responseMode == 'fragment');
+    }
+  }
+
 class AuthorizationHandler extends RedirectRequestHandler {
+    constructor(responseMode: 'query' | 'fragment') {
+        super(new LocalStorageBackend(), new NoHashQueryStringUtils(responseMode),  window.location, new DefaultCrypto());
+    }
+
     public completeAuthorizationRequest(): Promise<AuthorizationRequestResponse | null> {
         return super.completeAuthorizationRequest();
     }
