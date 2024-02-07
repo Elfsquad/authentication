@@ -14,6 +14,7 @@ The authentication library allows you to easily authenticate with the Elfsquad A
 - `signIn` starts the authentication flow.
 - `onSignIn` returns a promise that is called after the authentication flow has run successfully.
 - `isSignedIn` returns a promise with a boolean result that indicates if the user is signed in.
+- `getAccessToken` returns a promise that resolves into access token.
 
 ## Examples
 
