@@ -38,5 +38,4 @@ jobs:
                        --body "This PR updates the documentation for the Authentication Context based on the latest changes." \
                        --label "documentation"
         env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-
+          GH_TOKEN: ${{ secrets.TOKEN }}
