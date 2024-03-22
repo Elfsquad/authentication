@@ -29,7 +29,7 @@ jobs:
           cd $GITHUB_WORKSPACE/docs
           git config --global user.name 'GitHub Actions'
           git config --global user.email 'actions@github.com'
-          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/elfsquad/docs
+          git remote set-url origin https://x-access-token:${{ secrets.TOKEN }}@github.com/elfsquad/docs
           git checkout -b update-authentication-context-docs
           git add .
           git commit -m "Update documentation for authentication context"
