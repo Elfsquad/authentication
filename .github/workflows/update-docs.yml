@@ -15,7 +15,6 @@ jobs:
           repository: 'elfsquad/docs'
           fetch-depth: 1
           path: 'docs'
-          token: ${{ secrets.TOKEN }}
       - uses: actions/setup-node@v2
         with:
           node-version: '20.x'
@@ -36,6 +35,3 @@ jobs:
           gh pr create --title "Update Authentication Context Documentation" \
                        --body "This PR updates the documentation for the Authentication Context based on the latest changes." \
                        --label "documentation"
-        env:
-          GITHUB_TOKEN: ${{ secrets.TOKEN }}
-
