@@ -22,11 +22,7 @@ jobs:
           npm i -g @elfsquad/tsdoc-parser
           tsdoc-parser $GITHUB_WORKSPACE/authentication/src/authentication/authenticationContext.ts authenticationContext.json AuthenticationContext
 
-          ls "$GITHUB_WORKSPACE/docs/docs"
-          ls "$GITHUB_WORKSPACE/docs/docs/configurator"
-          ls "$GITHUB_WORKSPACE/docs/docs/configurator/libraries"
-          ls "$GITHUB_WORKSPACE/docs/docs/configurator/libraries/methods"
-          file=$"GITHUB_WORKSPACE/docs/docs/configurator/libraries/methods/authenticationContext.ts"
+          file="$GITHUB_WORKSPACE/docs/docs/configurator/libraries/methods/authenticationContext.ts"
           echo "export default $(cat authenticationContext.json)" > temp && mv temp $file
       - name: Commit, Push, and Create Pull Request
         run: |
