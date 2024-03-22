@@ -31,7 +31,7 @@ jobs:
           git checkout -b update-authentication-context-docs
           git add .
           git commit -m "Update documentation for authentication context"
-          git push --set-upstream origin update-authentication-context-docs
+          git push --set-upstream origin update-authentication-context-docs -f
           gh pr create --title "Update Authentication Context Documentation" \
                        --body "This PR updates the documentation for the Authentication Context based on the latest changes."
         env:
