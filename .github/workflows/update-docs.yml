@@ -20,7 +20,7 @@ jobs:
           node-version: '20.x'
       - run: |
           npm i -g @elfsquad/tsdoc-parser
-          tsdoc-parser src/authentication/authenticationContext.ts authenticationContext.json AuthenticationContext
+          tsdoc-parser $GITHUB_WORKSPACE/authentication/src/authentication/authenticationContext.ts authenticationContext.json AuthenticationContext
 
           echo "export default $(cat yourfile.js)" > temp && mv temp $GITHUB_WORKSPACE/docs/docs/configurator/libraries/methods/authenticationContext.ts
       - name: Commit, Push, and Create Pull Request
