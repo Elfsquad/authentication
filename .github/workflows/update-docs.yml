@@ -36,3 +36,6 @@ jobs:
           gh pr create --title "Update Authentication Context Documentation" \
                        --body "This PR updates the documentation for the Authentication Context based on the latest changes." \
                        --label "documentation"
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
