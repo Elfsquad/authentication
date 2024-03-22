@@ -41,6 +41,21 @@ export class AuthenticationContext {
 
     private state: string;
 
+
+    /**
+     * Creates an instance of AuthenticationContext & initializes with the provided authentication options.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext({
+     *   clientId: 'your-client-id',
+     *   redirectUri: 'https://example.com',
+     *   scope: 'Elfskot.Api offline_access',
+     *   responseMode: 'fragment',
+     *   loginUrl: 'https://login.elfsquad.io'
+     * });
+     * ```
+     */
     constructor(private options: IAuthenticationOptions) {
         if (!options) { console.error('No authentication options were provided'); return; }
         if (!options.clientId) { console.error('No client id provided'); return; }
@@ -55,6 +70,23 @@ export class AuthenticationContext {
         this.initialize();
     }
 
+    /**
+     * This method can be used for executing logic after the user has
+     * signed in. For example, you can use this method to fetch & set
+     * the access token, change the UI, etc.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * async function onSignIn() {
+     *   console.log('User has signed in');
+     * };
+     * authenticationContext.onSignIn().then(onSignIn);
+     * ```
+     *
+     * @returns promise that resolves when the user has signed in. If
+     * the user is already signed in, the promise resolves immediately.
+     */
     public onSignIn(): Promise<void> {
         // If the user is already authetnicated, resolve immediately
         if (this.validateAccessTokenResponse()) {
@@ -68,11 +100,37 @@ export class AuthenticationContext {
         return promise;
     }
 
+    /**
+     * This method starts the login flow & redirects the user to the login page.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * authenticationContext.signIn();
+     * ```
+     *
+     * @param options - oauth options that will be passed on to the
+     * authorization request. This can be used, for example, to perform
+     * a silent login.
+     */
     public async signIn(options: IOauthOptions = null): Promise<void> {
         await this.fetchConfiguration();
         this.makeAuthorizationRequest(options);
     }
 
+    /**
+     * This method signs the user out & revokes the tokens. After signing out, the user will be redirected to the postLogoutRedirectUri.
+     * If no postLogoutRedirectUri is provided, the user will be redirected to the login page.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * const postLogoutRedirectUri = 'https://example.com';
+     * authenticationContext.signOut(postLogoutRedirectUri);
+     * ```
+     *
+     * @param postLogoutRedirectUri - the uri where the user will be redirected to after signing out.
+     */
     public async signOut(postLogoutRedirectUri: string | null = null) {
         const idTokenHint = await this.getIdToken();
         this.revokeTokens()
@@ -133,6 +191,20 @@ export class AuthenticationContext {
         window.location.href = url.toString();
     }
 
+    /**
+     * This method can be used to check if the user is signed in, for example to show a login/logout button.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * async function isSignedIn(value: boolean) {
+     *   console.log('User is signed in:', value);
+     * }
+     * authenticationContext.isSignedIn().then(isSignedIn);
+     * ```
+     *
+     * @returns promise that resolves with a boolean indicating if the user is signed in.
+     */
     public isSignedIn(): Promise<boolean> {
         let promise = new Promise<boolean>((resolve, _) => {
             if (this.isInitialized) {
@@ -147,6 +219,21 @@ export class AuthenticationContext {
     }
 
     private _refreshTokenPromise: Promise<string> = null;
+    /**
+     * This method can be used to get the access token. This method will
+     * automatically refresh the access token if it has expired and a
+     * valid refresh token is available.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * authenticationContext.getAccessToken().then(accessToken => {
+     *   console.log('Access token:', accessToken);
+     * });
+     * ```
+     *
+     * @returns promise that resolves with the access token.
+     */
     public async getAccessToken(): Promise<string> {
         await this.waitFor(() => this.isInitialized);
 
@@ -168,6 +255,21 @@ export class AuthenticationContext {
         return accessToken;
     }
 
+    /**
+     * This method can be used to get the id token. Similar to the
+     * getAccessToken method, this method will automatically refresh
+     * the id (and access) token if it has expired and a valid refresh
+     * token is available.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     * authenticationContext.getIdToken().then(idToken => {
+     *   console.log('Id token:', idToken);
+     * });
+     * ```
+     * @returns promise that resolves with the id token.
+     */
     public async getIdToken(): Promise<string> {
         if (!this.configuration) {
             console.error('@elfsquad/authentication: No service configuration found');
@@ -187,11 +289,54 @@ export class AuthenticationContext {
         return Promise.resolve(this.accessTokenResponse.idToken);
     }
 
+    /**
+     * This method can be used to persist date in local storage, which
+     * can be used to save data between sign in attempts. This can
+     * be useful, for example, to save the url the current url before
+     * the user is redirected to the login page.
+     *
+     * This method user the oauth2 state parameter, which means the data
+     * is only persisted for one sign in attempt.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     *
+     * authenticationContext.setState({ url: window.location.href });
+     * authenticationContext.onSignIn().then(() => {
+     *   const { url } = authenticationContext.getState();
+     *   window.location.href = url;
+     * });
+     *
+     * authenticationContext.signIn();
+     * ```
+     *
+     * @param data - the data that will be persisted in local storage.
+     */
     public setState(data: any) {
       this.state = (Math.random() + 1).toString(36).substring(2);
       localStorage.setItem(`elfsquad-${this.state}`, JSON.stringify(data));
     }
 
+    /**
+     * This method can be used to retrieve data that was persisted in
+     * local storage using the setState method.
+     *
+     * @example
+     * ```typescript
+     * const authenticationContext = new AuthenticationContext();
+     *
+     * authenticationContext.setState({ url: window.location.href });
+     * authenticationContext.onSignIn().then(() => {
+     *   const { url } = authenticationContext.getState();
+     *   window.location.href = url;
+     * });
+     *
+     * authenticationContext.signIn();
+     * ```
+     *
+     * @returns the data that was persisted in local storage.
+     */
     public getState(): any | null {
       const val = localStorage.getItem(`elfsquad-${this.state}`);
       if (val == null)
