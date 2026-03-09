@@ -19,4 +19,15 @@ export interface IAuthenticationOptions{
      * The response mode to use, defaults to 'fragment'.
     */
     responseMode?: 'query' | 'fragment' | undefined;
+    /**
+     * Optional custom implementation for refreshing the access token.
+     * When provided, the library calls this instead of using the built-in
+     * refresh token flow (which reads from localStorage). Use this to
+     * implement secure refresh flows, e.g. via an HttpOnly-cookie-backed
+     * backend endpoint.
+     *
+     * @returns a promise that resolves with the new access token and its
+     * lifetime in seconds.
+    */
+    refreshAccessToken?: () => Promise<{ accessToken: string; expiresIn: number }>;
 }

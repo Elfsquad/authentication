@@ -241,7 +241,7 @@ export class AuthenticationContext {
             return Promise.resolve(this.accessTokenResponse.accessToken);
         }
 
-        if (!TokenStore.hasRefreshToken()) {
+        if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
             return Promise.resolve(null);
         }
 
@@ -350,6 +350,18 @@ export class AuthenticationContext {
     }
 
     private async refreshAccessToken(): Promise<string> {
+        if (this.options.refreshAccessToken) {
+            const result = await this.options.refreshAccessToken();
+            this.accessTokenResponse = new TokenResponse({
+                access_token: result.accessToken,
+                expires_in: result.expiresIn,
+                issued_at: Math.floor(Date.now() / 1000),
+                token_type: 'bearer',
+            });
+            TokenStore.saveTokenResponse(this.accessTokenResponse);
+            return result.accessToken;
+        }
+
         if (!this.configuration) {
             return null;
         }
@@ -452,7 +464,7 @@ export class AuthenticationContext {
             return;
         }
 
-        if (TokenStore.hasRefreshToken()) {
+        if (TokenStore.hasRefreshToken() || this.options.refreshAccessToken) {
             await this.fetchConfiguration();
             this.refreshAccessToken()
                 .then(() => {
