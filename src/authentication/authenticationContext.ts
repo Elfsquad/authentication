@@ -416,6 +416,13 @@ export class AuthenticationContext {
         const locationVariable = window.location.href;
         this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)?.[1]
 
+        if (this.state === undefined || this.state === null) {
+            const stateError = new Error("Missing 'state' parameter in authorization response URL.");
+            for (let onSignInRejector of this.onSignInRejectors) {
+                onSignInRejector(stateError);
+            }
+            return;
+        }
         location.hash = '';
         if (!!error) {
             for (let onSignInRejector of this.onSignInRejectors) {
