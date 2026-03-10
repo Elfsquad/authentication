@@ -69,6 +69,21 @@ describe('AuthenticationContext', function() {
             expect(refreshAccessTokenMock).toHaveBeenCalled();
         });
 
+        it('exposes idToken returned by custom refreshAccessToken', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'CUSTOM_TOKEN', expiresIn: 3600, idToken: 'CUSTOM_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            await authenticationContext.getAccessToken();
+            expect(await authenticationContext.getIdToken()).toBe('CUSTOM_ID_TOKEN');
+        });
+
         it('calls custom refreshAccessToken option when provided and token is expired', async () => {
             const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'CUSTOM_TOKEN', expiresIn: 3600 });
             authenticationContext = new AuthenticationContext({

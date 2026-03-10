@@ -340,6 +340,7 @@ export class AuthenticationContext {
                 expires_in: result.expiresIn.toString(),
                 issued_at: Math.floor(Date.now() / 1000),
                 token_type: 'bearer',
+                id_token: result.idToken,
             });
             TokenStore.saveTokenResponse(this.accessTokenResponse);
             return result.accessToken;

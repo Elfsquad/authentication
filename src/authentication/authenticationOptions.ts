@@ -31,7 +31,7 @@ export interface IAuthenticationOptions{
      * @returns a promise that resolves with the new access token and its
      * lifetime in seconds.
     */
-    refreshAccessToken?: () => Promise<{ accessToken: string; expiresIn: number }>;
+    refreshAccessToken?: () => Promise<{ accessToken: string; expiresIn: number; idToken?: string }>;
     /**
      * Optional callback to securely store the refresh token server-side.
      * When provided, the library calls this instead of saving the refresh
