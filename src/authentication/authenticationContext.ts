@@ -417,7 +417,7 @@ export class AuthenticationContext {
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
         this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)?.[1]
-        location.hash = '';
+        window.location.hash = '';
 
         if (this.state === undefined || this.state === null) {
             this.callSignInRejectors(new Error("Missing 'state' parameter in authorization response URL."));
