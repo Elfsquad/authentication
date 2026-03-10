@@ -132,6 +132,7 @@ export class AuthenticationContext {
      * @param postLogoutRedirectUri - the uri where the user will be redirected to after signing out.
      */
     public async signOut(postLogoutRedirectUri: string | null = null) {
+        await this.fetchConfiguration();
         const idTokenHint = await this.getIdToken();
         await this.revokeTokens();
         this.deleteTokens();
@@ -354,9 +355,7 @@ export class AuthenticationContext {
             return result.accessToken;
         }
 
-        if (!this.configuration) {
-            return null;
-        }
+        await this.fetchConfiguration();
 
         const request = new TokenRequest({
             client_id: this.options.clientId,
