@@ -228,7 +228,7 @@ export class AuthenticationContext {
      *
      * @returns promise that resolves with the access token.
      */
-    public async getAccessToken(): Promise<string> {
+    public async getAccessToken(): Promise<string | null> {
         await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
