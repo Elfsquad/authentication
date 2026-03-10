@@ -477,8 +477,6 @@ export class AuthenticationContext {
     }
 
     private async initialize(): Promise<void> {
-        await this.fetchConfiguration();
-
         if (TokenStore.hasTokenResponse()) {
             this.accessTokenResponse = TokenStore.getTokenResponse();
         }
@@ -497,6 +495,8 @@ export class AuthenticationContext {
             this.callSignInResolvers();
             return;
         }
+
+        await this.fetchConfiguration();
 
         if (TokenStore.hasRefreshToken() || this.options.refreshAccessToken) {
             try {
