@@ -122,6 +122,26 @@ describe('AuthenticationContext', function() {
             expect(revokeRefreshTokenMock).toHaveBeenCalled();
         });
 
+        it('still clears local tokens and redirects when revokeRefreshToken rejects', async () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: jest.fn().mockRejectedValue(new Error('network error')),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true, accessToken: 'AT' };
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            errorSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
         it('does not call built-in revocation when revokeRefreshToken option is provided', async () => {
             const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
             const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
@@ -263,6 +283,32 @@ describe('AuthenticationContext', function() {
             jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
             delete (window as any).location;
             (window as any).location = { href: 'https://test/callback#state=TEST_STATE', hash: '#state=TEST_STATE' };
+        });
+
+        it('rejects onSignIn when state parameter is missing from the redirect URL', async () => {
+            (window as any).location = { href: 'https://test/callback#code=AUTH_CODE', hash: '#code=AUTH_CODE' };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+            // Flush microtasks so onSignIn() advances past ensureInitialized() and
+            // registers its rejector before onAuthorization() fires callSignInRejectors.
+            await Promise.resolve();
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
+        });
+
+        it('rejects onSignIn when state parameter is empty in the redirect URL', async () => {
+            (window as any).location = { href: 'https://test/callback#state=&code=AUTH_CODE', hash: '#state=&code=AUTH_CODE' };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+            // Flush microtasks so onSignIn() advances past ensureInitialized() and
+            // registers its rejector before onAuthorization() fires callSignInRejectors.
+            await Promise.resolve();
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
         });
 
         it('calls storeRefreshToken instead of saving to localStorage when provided', async () => {
@@ -556,7 +602,7 @@ describe('AuthenticationContext', function() {
 
     describe('sanitizeRedirectUrl', function() {
 
-        let sanitized: string;
+        let sanitized: string | null;
 
         beforeEach(() => {
             sanitized = null;
@@ -568,7 +614,7 @@ describe('AuthenticationContext', function() {
 
             (authenticationContext as any).sanitizeRedirectUrl();
 
-            const url = new URL(sanitized);
+            const url = new URL(sanitized!);
             expect(url.hash).toBe('');
         });
 
@@ -582,7 +628,7 @@ describe('AuthenticationContext', function() {
 
             (authenticationContext as any).sanitizeRedirectUrl();
 
-            const url = new URL(sanitized);
+            const url = new URL(sanitized!);
             expect(url.searchParams.get('code')).toBeNull();
             expect(url.searchParams.get('state')).toBeNull();
             expect(url.hash).toBe('#/dashboard');
@@ -593,7 +639,7 @@ describe('AuthenticationContext', function() {
 
             (authenticationContext as any).sanitizeRedirectUrl();
 
-            const url = new URL(sanitized);
+            const url = new URL(sanitized!);
             expect(new URLSearchParams(url.hash.slice(1)).get('custom')).toBe('keep');
             expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBeNull();
         });
@@ -603,7 +649,7 @@ describe('AuthenticationContext', function() {
 
             (authenticationContext as any).sanitizeRedirectUrl();
 
-            const url = new URL(sanitized);
+            const url = new URL(sanitized!);
             expect(url.hash).toBe('#/dashboard');
         });
 

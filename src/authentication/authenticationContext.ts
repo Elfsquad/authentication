@@ -134,7 +134,11 @@ export class AuthenticationContext {
     public async signOut(postLogoutRedirectUri: string | null = null) {
         await this.fetchConfiguration();
         const idTokenHint = await this.getIdToken();
-        await this.revokeTokens();
+        try {
+            await this.revokeTokens();
+        } catch (e) {
+            console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+        }
         this.deleteTokens();
         await this.endSession(postLogoutRedirectUri, idTokenHint);
     }
@@ -429,7 +433,7 @@ export class AuthenticationContext {
         this.state = params.get('state') ?? undefined;
         this.sanitizeRedirectUrl();
 
-        if (this.state === undefined || this.state === null) {
+        if (!this.state) {
             this.callSignInRejectors(new Error("Missing 'state' parameter in authorization response URL."));
             return;
         }
