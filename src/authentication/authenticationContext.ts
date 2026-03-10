@@ -529,9 +529,19 @@ export class AuthenticationContext {
     }
 
     private sanitizeRedirectUrl(): void {
+        const oauthParams = ['code', 'state', 'session_state', 'iss'];
         const url = new URL(window.location.href);
-        ['code', 'state', 'session_state', 'iss'].forEach(p => url.searchParams.delete(p));
-        url.hash = '';
+        if (this.options.responseMode === 'fragment') {
+            // Remove only OAuth params from the fragment, preserving any non-auth hash content
+            // (e.g. hash-based client-side routes).
+            const hashParams = new URLSearchParams(url.hash.slice(1));
+            oauthParams.forEach(p => hashParams.delete(p));
+            const remaining = hashParams.toString();
+            url.hash = remaining ? remaining : '';
+        } else {
+            // Query mode: remove OAuth params from the query string only; leave the fragment intact.
+            oauthParams.forEach(p => url.searchParams.delete(p));
+        }
         window.history.replaceState(null, '', url.toString());
     }
 

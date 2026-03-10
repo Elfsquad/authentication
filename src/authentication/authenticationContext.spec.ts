@@ -550,6 +550,52 @@ describe('AuthenticationContext', function() {
 
     });
 
+    describe('sanitizeRedirectUrl', function() {
+
+        let sanitized: string;
+
+        beforeEach(() => {
+            sanitized = null;
+            (window.history as any).replaceState = (_s: any, _t: any, url: string) => { sanitized = url; };
+        });
+
+        it('removes OAuth params from the fragment in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback#code=C&state=S&session_state=SS' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized);
+            expect(url.hash).toBe('');
+        });
+
+        it('removes OAuth params from the query string in query mode, leaving the fragment intact', () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                responseMode: 'query',
+            });
+            (window as any).location = { href: 'https://app.example.com/callback?code=C&state=S#/dashboard' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized);
+            expect(url.searchParams.get('code')).toBeNull();
+            expect(url.searchParams.get('state')).toBeNull();
+            expect(url.hash).toBe('#/dashboard');
+        });
+
+        it('preserves non-OAuth params in the fragment in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback#code=C&state=S&custom=keep' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized);
+            expect(new URLSearchParams(url.hash.slice(1)).get('custom')).toBe('keep');
+            expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBeNull();
+        });
+
+    });
+
     describe('setState', function() {
 
         it('generates a unique state key on each call', () => {
