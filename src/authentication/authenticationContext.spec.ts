@@ -1,5 +1,4 @@
 import 'jest';
-import * as fetchMock from 'fetch-mock'
 import { AuthorizationServiceConfiguration } from '@openid/appauth/built/authorization_service_configuration';
 import { AuthenticationContext } from '..';
 
