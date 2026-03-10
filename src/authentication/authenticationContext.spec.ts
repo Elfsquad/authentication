@@ -363,6 +363,29 @@ describe('AuthenticationContext', function() {
             expect(storeRefreshTokenMock).toHaveBeenCalledWith('EXISTING_TOKEN');
         });
 
+        it('migrates refresh token embedded in token response and scrubs it from localStorage', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: storeRefreshTokenMock,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
+            });
+            // Simulate a legacy session: valid access token with refresh_token embedded in the response
+            (authenticationContext as any).accessTokenResponse = {
+                isValid: () => true,
+                refreshToken: 'EMBEDDED_REFRESH_TOKEN',
+            };
+
+            await authenticationContext.isSignedIn();
+
+            expect(storeRefreshTokenMock).toHaveBeenCalledWith('EMBEDDED_REFRESH_TOKEN');
+            // refreshToken must be scrubbed from the in-memory response
+            expect((authenticationContext as any).accessTokenResponse.refreshToken).toBeUndefined();
+        });
+
         it('does not call storeRefreshToken when no token is in localStorage', async () => {
             const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
             authenticationContext = new AuthenticationContext({

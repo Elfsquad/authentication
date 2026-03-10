@@ -481,13 +481,22 @@ export class AuthenticationContext {
             this.accessTokenResponse = TokenStore.getTokenResponse();
         }
 
-        // Eagerly migrate any refresh token from localStorage to secure storage
-        if (this.options.storeRefreshToken && TokenStore.hasRefreshToken()) {
-            try {
-                await this.options.storeRefreshToken(TokenStore.getRefreshToken());
-                TokenStore.deleteRefreshToken();
-            } catch (e) {
-                console.error('@elfsquad/authentication: Failed to migrate refresh token', e);
+        // Eagerly migrate any refresh token from localStorage to secure storage.
+        // Check both the dedicated key and the token response (legacy sessions may
+        // have refresh_token embedded in elfsquad_token_response).
+        if (this.options.storeRefreshToken) {
+            const refreshToken = TokenStore.getRefreshToken() ?? this.accessTokenResponse?.refreshToken;
+            if (refreshToken) {
+                try {
+                    await this.options.storeRefreshToken(refreshToken);
+                    TokenStore.deleteRefreshToken();
+                    if (this.accessTokenResponse?.refreshToken) {
+                        this.accessTokenResponse.refreshToken = undefined;
+                        TokenStore.saveTokenResponse(this.accessTokenResponse);
+                    }
+                } catch (e) {
+                    console.error('@elfsquad/authentication: Failed to migrate refresh token', e);
+                }
             }
         }
 
