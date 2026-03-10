@@ -33,6 +33,10 @@ describe('AuthenticationContext', function() {
 
     afterEach(() => {
         localStorage.clear();
+        // Reset window globals mutated by onAuthorization / sanitizeRedirectUrl tests.
+        (window as any).location = {};
+        (window.history as any).replaceState = () => {};
+        jest.restoreAllMocks();
     });
 
     describe('constructor validation', function() {
@@ -592,6 +596,15 @@ describe('AuthenticationContext', function() {
             const url = new URL(sanitized);
             expect(new URLSearchParams(url.hash.slice(1)).get('custom')).toBe('keep');
             expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBeNull();
+        });
+
+        it('leaves a hash-based client-side route untouched in fragment mode when no OAuth params are present', () => {
+            (window as any).location = { href: 'https://app.example.com/#/dashboard' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized);
+            expect(url.hash).toBe('#/dashboard');
         });
 
     });

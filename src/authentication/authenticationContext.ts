@@ -226,7 +226,9 @@ export class AuthenticationContext {
      * });
      * ```
      *
-     * @returns promise that resolves with the access token.
+     * @returns promise that resolves with the access token, or `null` if the
+     * token has expired and no refresh source is available (no refresh token in
+     * storage and no `refreshAccessToken` callback provided).
      */
     public async getAccessToken(): Promise<string | null> {
         await this.ensureInitialized();
@@ -513,8 +515,6 @@ export class AuthenticationContext {
             return;
         }
 
-        await this.fetchConfiguration();
-
         if (TokenStore.hasRefreshToken() || this.options.refreshAccessToken) {
             try {
                 await this.refreshAccessToken();
@@ -536,12 +536,16 @@ export class AuthenticationContext {
         const oauthParams = ['code', 'state', 'session_state', 'iss'];
         const url = new URL(window.location.href);
         if (this.options.responseMode === 'fragment') {
-            // Remove only OAuth params from the fragment, preserving any non-auth hash content
-            // (e.g. hash-based client-side routes).
+            // Only rewrite the fragment when it actually contains OAuth params.
+            // If the hash looks like a client-side route (e.g. #/dashboard) and
+            // none of the OAuth params are present, leave it verbatim to avoid
+            // URLSearchParams encoding it into #%2Fdashboard=.
             const hashParams = new URLSearchParams(url.hash.slice(1));
-            oauthParams.forEach(p => hashParams.delete(p));
-            const remaining = hashParams.toString();
-            url.hash = remaining ? remaining : '';
+            if (oauthParams.some(p => hashParams.has(p))) {
+                oauthParams.forEach(p => hashParams.delete(p));
+                const remaining = hashParams.toString();
+                url.hash = remaining ? remaining : '';
+            }
         } else {
             // Query mode: remove OAuth params from the query string only; leave the fragment intact.
             oauthParams.forEach(p => url.searchParams.delete(p));
