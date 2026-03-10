@@ -244,9 +244,13 @@ export class AuthenticationContext {
             return this._refreshTokenPromise;
         }
 
-        this._refreshTokenPromise = this.refreshAccessToken().finally(() => {
-            this._refreshTokenPromise = null;
-        });
+        this._refreshTokenPromise = (async () => {
+            try {
+                return await this.refreshAccessToken();
+            } finally {
+                this._refreshTokenPromise = null;
+            }
+        })();
         return this._refreshTokenPromise;
     }
 
