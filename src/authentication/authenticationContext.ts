@@ -371,7 +371,9 @@ export class AuthenticationContext {
             .performTokenRequest(this.configuration, request)
 
         this.accessTokenResponse = response;
-        TokenStore.saveRefreshToken(response.refreshToken);
+        if (response.refreshToken) {
+            TokenStore.saveRefreshToken(response.refreshToken);
+        }
         TokenStore.saveTokenResponse(response);
         return response.accessToken;
     }
@@ -434,10 +436,16 @@ export class AuthenticationContext {
         if (!response) { return; }
 
         let code = response.code;
-        if (!code){
+        if (!code) {
             code = this.options.responseMode == 'fragment'
-                ? new RegExp('#code=(.*?)&').exec(locationVariable)?.[1]
-                : new URL(location.href).searchParams.get('code');
+                ? new URLSearchParams(new URL(locationVariable).hash.slice(1)).get('code')
+                : new URL(locationVariable).searchParams.get('code');
+        }
+
+        if (!code) {
+            const codeError = new Error('No authorization code found in the redirect URL.');
+            for (const reject of this.onSignInRejectors) { reject(codeError); }
+            return;
         }
 
         let tokenRequest = new TokenRequest({
@@ -459,11 +467,17 @@ export class AuthenticationContext {
         this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
 
+        const refreshToken = this.accessTokenResponse.refreshToken;
         if (this.options.storeRefreshToken) {
-            await this.options.storeRefreshToken(this.accessTokenResponse.refreshToken);
+            if (!refreshToken) {
+                const err = new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.');
+                for (const reject of this.onSignInRejectors) { reject(err); }
+                return;
+            }
+            await this.options.storeRefreshToken(refreshToken);
             this.accessTokenResponse.refreshToken = undefined;
-        } else if (!this.options.refreshAccessToken) {
-            TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
+        } else if (!this.options.refreshAccessToken && refreshToken) {
+            TokenStore.saveRefreshToken(refreshToken);
         }
         TokenStore.saveTokenResponse(this.accessTokenResponse);
         this.callSignInResolvers();

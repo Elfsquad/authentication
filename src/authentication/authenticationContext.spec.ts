@@ -296,6 +296,27 @@ describe('AuthenticationContext', function() {
             expect(localStorage.getItem('elfsquad_refresh_token')).toBe('REFRESH_TOKEN');
         });
 
+        it('rejects onSignIn when storeRefreshToken is provided but no refresh token was returned', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.storeRefreshToken = storeRefreshTokenMock;
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            fakeTokenResponse.refreshToken = undefined;
+
+            const signInPromise = authenticationContext.onSignIn();
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            await expect(signInPromise).rejects.toThrow('No refresh token returned');
+            expect(storeRefreshTokenMock).not.toHaveBeenCalled();
+        });
+
+        it('does not save to localStorage when neither callback is provided and refresh token is absent', async () => {
+            fakeTokenResponse.refreshToken = undefined;
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
+        });
+
     });
 
     describe('initialize migration', function() {
