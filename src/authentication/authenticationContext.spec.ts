@@ -101,9 +101,17 @@ describe('AuthenticationContext', function() {
 
         it('calls revokeRefreshToken option instead of built-in localStorage revocation when provided', async () => {
             const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
-            (authenticationContext as any).options.revokeRefreshToken = revokeRefreshTokenMock;
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
             (authenticationContext as any).configuration = fakeConfig;
-            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: jest.fn().mockResolvedValue(true) };
+            (authenticationContext as any)._initPromise = Promise.resolve();
 
             await authenticationContext.signOut();
 
@@ -112,10 +120,20 @@ describe('AuthenticationContext', function() {
 
         it('does not call built-in revocation when revokeRefreshToken option is provided', async () => {
             const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
-            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
-            (authenticationContext as any).options.revokeRefreshToken = revokeRefreshTokenMock;
             const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any)._initPromise = Promise.resolve();
             (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: performRevokeTokenRequestMock };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
 
             await authenticationContext.signOut();
 
@@ -344,8 +362,8 @@ describe('AuthenticationContext', function() {
     describe('getIdToken', function() {
 
         it('calls refreshAccessToken when provided and access token is expired', async () => {
-            (authenticationContext as any).options.refreshAccessToken = jest.fn();
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
 
             const refreshAccessTokenMock = jest.fn().mockImplementation(async () => {
                 (authenticationContext as any).accessTokenResponse = {
