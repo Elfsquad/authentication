@@ -420,16 +420,11 @@ export class AuthenticationContext {
         location.hash = '';
 
         if (this.state === undefined || this.state === null) {
-            const stateError = new Error("Missing 'state' parameter in authorization response URL.");
-            for (let onSignInRejector of this.onSignInRejectors) {
-                onSignInRejector(stateError);
-            }
+            this.callSignInRejectors(new Error("Missing 'state' parameter in authorization response URL."));
             return;
         }
         if (!!error) {
-            for (let onSignInRejector of this.onSignInRejectors) {
-                onSignInRejector(error);
-            }
+            this.callSignInRejectors(error as unknown as Error);
             return;
         }
 
@@ -443,8 +438,7 @@ export class AuthenticationContext {
         }
 
         if (!code) {
-            const codeError = new Error('No authorization code found in the redirect URL.');
-            for (const reject of this.onSignInRejectors) { reject(codeError); }
+            this.callSignInRejectors(new Error('No authorization code found in the redirect URL.'));
             return;
         }
 
@@ -470,8 +464,7 @@ export class AuthenticationContext {
         const refreshToken = this.accessTokenResponse.refreshToken;
         if (this.options.storeRefreshToken) {
             if (!refreshToken) {
-                const err = new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.');
-                for (const reject of this.onSignInRejectors) { reject(err); }
+                this.callSignInRejectors(new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.'));
                 return;
             }
             await this.options.storeRefreshToken(refreshToken);
@@ -523,9 +516,15 @@ export class AuthenticationContext {
     }
 
     private callSignInResolvers(): void {
-        for (let onSignInResolver of this.onSignInResolvers) {
-            onSignInResolver();
-        }
+        const resolvers = this.onSignInResolvers.splice(0);
+        this.onSignInRejectors.splice(0);
+        for (const resolve of resolvers) { resolve(); }
+    }
+
+    private callSignInRejectors(error: Error): void {
+        const rejectors = this.onSignInRejectors.splice(0);
+        this.onSignInResolvers.splice(0);
+        for (const reject of rejectors) { reject(error); }
     }
 }
 
