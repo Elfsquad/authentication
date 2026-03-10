@@ -149,6 +149,20 @@ describe('AuthenticationContext', function() {
             expect(refreshAccessTokenMock).toHaveBeenCalled();
         });
 
+        it('clears _refreshTokenPromise after failure so a subsequent call retries', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
+            const refreshAccessTokenMock = jest.fn()
+                .mockRejectedValueOnce(new Error('network error'))
+                .mockResolvedValueOnce('RETRY_TOKEN');
+            (authenticationContext as any).refreshAccessToken = refreshAccessTokenMock;
+
+            await expect(authenticationContext.getAccessToken()).rejects.toThrow('network error');
+            const token = await authenticationContext.getAccessToken();
+            expect(token).toBe('RETRY_TOKEN');
+            expect(refreshAccessTokenMock).toHaveBeenCalledTimes(2);
+        });
+
         it('exposes idToken returned by custom refreshAccessToken', async () => {
             const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'CUSTOM_TOKEN', expiresIn: 3600, idToken: 'CUSTOM_ID_TOKEN' });
             authenticationContext = new AuthenticationContext({

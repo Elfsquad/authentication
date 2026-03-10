@@ -242,10 +242,10 @@ export class AuthenticationContext {
             return this._refreshTokenPromise;
         }
 
-        this._refreshTokenPromise = this.refreshAccessToken();
-        const accessToken = await this._refreshTokenPromise;
-        this._refreshTokenPromise = null;
-        return accessToken;
+        this._refreshTokenPromise = this.refreshAccessToken().finally(() => {
+            this._refreshTokenPromise = null;
+        });
+        return this._refreshTokenPromise;
     }
 
     /**
