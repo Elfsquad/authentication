@@ -497,6 +497,59 @@ describe('AuthenticationContext', function() {
 
     });
 
+    describe('BFF round-trip', function() {
+
+        it('fast-paths on valid cached token, refreshes on expiry, and revokes on sign-out', async () => {
+            // --- setup ---
+            const refreshAccessTokenMock = jest.fn()
+                .mockResolvedValueOnce({ accessToken: 'REFRESHED_TOKEN', expiresIn: 3600, idToken: 'ID_TOKEN' });
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshAccessTokenMock,
+                storeRefreshToken: storeRefreshTokenMock,
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+
+            // Simulate initialize() fast-path: valid token already in memory, no network call needed.
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true, accessToken: 'CACHED_TOKEN', idToken: 'CACHED_ID_TOKEN' };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+            (authenticationContext as any).configuration = fakeConfig;
+
+            // Fast-path: valid token returned without calling refreshAccessToken.
+            const firstToken = await authenticationContext.getAccessToken();
+            expect(firstToken).toBe('CACHED_TOKEN');
+            expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+
+            // Token expires.
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false, idToken: 'CACHED_ID_TOKEN' };
+
+            // Refresh: custom callback invoked, new token returned.
+            const refreshedToken = await authenticationContext.getAccessToken();
+            expect(refreshedToken).toBe('REFRESHED_TOKEN');
+            expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+
+            // ID token preserved from refresh response.
+            expect(await authenticationContext.getIdToken()).toBe('ID_TOKEN');
+
+            // Sign-out: revokeRefreshToken callback invoked for the refresh token;
+            // access token is still revoked via the built-in path.
+            const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
+            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: performRevokeTokenRequestMock };
+            jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            expect(revokeRefreshTokenMock).toHaveBeenCalled();
+            const refreshTokenRevocations = performRevokeTokenRequestMock.mock.calls
+                .filter(([, req]) => req?.tokenTypeHint === 'refresh_token');
+            expect(refreshTokenRevocations).toHaveLength(0);
+        });
+
+    });
+
     describe('setState', function() {
 
         it('generates a unique state key on each call', () => {

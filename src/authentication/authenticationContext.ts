@@ -236,6 +236,7 @@ export class AuthenticationContext {
         }
 
         if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
+            console.warn('@elfsquad/authentication: Access token expired and no refresh source is available. Ensure offline_access is in the requested scope or provide a refreshAccessToken callback.');
             return null;
         }
 
@@ -560,6 +561,7 @@ class AuthorizationHandler extends RedirectRequestHandler {
         super(new LocalStorageBackend(), new NoHashQueryStringUtils(responseMode),  window.location, new DefaultCrypto());
     }
 
+    // Exposes the protected base-class method publicly so AuthenticationContext can call it.
     public performAuthorizationRequest(configuration: AuthorizationServiceConfiguration, request: AuthorizationRequest): void {
         super.performAuthorizationRequest(configuration, request);
     }
