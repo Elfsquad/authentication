@@ -30,4 +30,12 @@ export interface IAuthenticationOptions{
      * lifetime in seconds.
     */
     refreshAccessToken?: () => Promise<{ accessToken: string; expiresIn: number }>;
+    /**
+     * Optional callback to securely store the refresh token server-side.
+     * When provided, the library calls this instead of saving the refresh
+     * token to localStorage — both on initial login and when migrating an
+     * existing localStorage token on the next page load. After the callback
+     * resolves, the token is removed from localStorage.
+    */
+    storeRefreshToken?: (refreshToken: string) => Promise<void>;
 }

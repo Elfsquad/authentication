@@ -133,11 +133,9 @@ export class AuthenticationContext {
      */
     public async signOut(postLogoutRedirectUri: string | null = null) {
         const idTokenHint = await this.getIdToken();
-        this.revokeTokens()
-            .then(async () => {
-                await this.endSession(postLogoutRedirectUri, idTokenHint);
-                this.deleteTokens();
-            });
+        await this.revokeTokens();
+        this.deleteTokens();
+        await this.endSession(postLogoutRedirectUri, idTokenHint);
     }
 
     private deleteTokens() {
@@ -280,7 +278,7 @@ export class AuthenticationContext {
             return Promise.resolve(this.accessTokenResponse.idToken);
         }
 
-        if (!TokenStore.hasRefreshToken()) {
+        if (!TokenStore.hasRefreshToken() && !this.options.refreshAccessToken) {
             console.log('@elfsquad/authentication: No refresh token found');
             return Promise.resolve(null);
         }
@@ -314,7 +312,7 @@ export class AuthenticationContext {
      * @param data - the data that will be persisted in local storage.
      */
     public setState(data: any) {
-      this.state = (Math.random() + 1).toString(36).substring(2);
+      this.state = new DefaultCrypto().generateRandom(10);
       localStorage.setItem(`elfsquad-${this.state}`, JSON.stringify(data));
     }
 
@@ -354,7 +352,7 @@ export class AuthenticationContext {
             const result = await this.options.refreshAccessToken();
             this.accessTokenResponse = new TokenResponse({
                 access_token: result.accessToken,
-                expires_in: result.expiresIn,
+                expires_in: result.expiresIn.toString(),
                 issued_at: Math.floor(Date.now() / 1000),
                 token_type: 'bearer',
             });
@@ -407,7 +405,7 @@ export class AuthenticationContext {
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
-        this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)[1]
+        this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)?.[1]
 
         location.hash = '';
         if (!!error) {
@@ -422,7 +420,7 @@ export class AuthenticationContext {
         let code = response.code;
         if (!code){
             code = this.options.responseMode == 'fragment'
-                ? new RegExp('#code=(.*?)&').exec(locationVariable)[1]
+                ? new RegExp('#code=(.*?)&').exec(locationVariable)?.[1]
                 : new URL(location.href).searchParams.get('code');
         }
 
@@ -444,7 +442,12 @@ export class AuthenticationContext {
 
         this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
-        TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
+            
+        if (this.options.storeRefreshToken) {
+            await this.options.storeRefreshToken(this.accessTokenResponse.refreshToken);
+        } else if (!this.options.refreshAccessToken) {
+            TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
+        }
         TokenStore.saveTokenResponse(this.accessTokenResponse);
         this.callSignInResolvers();
     }
@@ -454,6 +457,16 @@ export class AuthenticationContext {
 
         if (TokenStore.hasTokenResponse()) {
             this.accessTokenResponse = TokenStore.getTokenResponse();
+        }
+
+        // Eagerly migrate any refresh token from localStorage to secure storage
+        if (this.options.storeRefreshToken && TokenStore.hasRefreshToken()) {
+            try {
+                await this.options.storeRefreshToken(TokenStore.getRefreshToken());
+                TokenStore.deleteRefreshToken();
+            } catch (e) {
+                console.error('@elfsquad/authentication: Failed to migrate refresh token', e);
+            }
         }
 
         // If the access token is still valid, we do not need to refresh
@@ -528,6 +541,10 @@ class NoHashQueryStringUtils extends BasicQueryStringUtils {
 class AuthorizationHandler extends RedirectRequestHandler {
     constructor(responseMode: 'query' | 'fragment') {
         super(new LocalStorageBackend(), new NoHashQueryStringUtils(responseMode),  window.location, new DefaultCrypto());
+    }
+
+    public performAuthorizationRequest(configuration: AuthorizationServiceConfiguration, request: AuthorizationRequest): void {
+        super.performAuthorizationRequest(configuration, request);
     }
 
     public completeAuthorizationRequest(): Promise<AuthorizationRequestResponse | null> {
