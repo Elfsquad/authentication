@@ -644,6 +644,17 @@ describe('AuthenticationContext', function() {
             expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBeNull();
         });
 
+        it('strips OAuth params from the query string even in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback?code=C&state=S#state=S&code=C' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.searchParams.get('code')).toBeNull();
+            expect(url.searchParams.get('state')).toBeNull();
+            expect(url.hash).toBe('');
+        });
+
         it('leaves a hash-based client-side route untouched in fragment mode when no OAuth params are present', () => {
             (window as any).location = { href: 'https://app.example.com/#/dashboard' };
 

@@ -134,10 +134,11 @@ export class AuthenticationContext {
     public async signOut(postLogoutRedirectUri: string | null = null) {
         await this.fetchConfiguration();
         const idTokenHint = await this.getIdToken();
-        try {
-            await this.revokeTokens();
-        } catch (e) {
-            console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+        const revocations = await this.revokeTokens();
+        for (const result of revocations) {
+            if (result.status === 'rejected') {
+                console.error('@elfsquad/authentication: Token revocation failed during sign-out', result.reason);
+            }
         }
         this.deleteTokens();
         await this.endSession(postLogoutRedirectUri, idTokenHint);
@@ -150,7 +151,7 @@ export class AuthenticationContext {
     }
 
     private revokeTokens(): Promise<any> {
-        return Promise.all([
+        return Promise.allSettled([
           this.revokeRefreshToken(),
           this.revokeAccessToken(),
         ]);
@@ -539,21 +540,23 @@ export class AuthenticationContext {
     private sanitizeRedirectUrl(): void {
         const oauthParams = ['code', 'state', 'session_state', 'iss'];
         const url = new URL(window.location.href);
+
+        // Always strip OAuth params from the query string regardless of responseMode,
+        // so values returned in an unexpected location don't linger in history/referrers.
+        oauthParams.forEach(p => url.searchParams.delete(p));
+
+        // In fragment mode, also strip OAuth params from the hash — but only rewrite
+        // it when OAuth params are actually present to avoid mangling hash-based routes
+        // (e.g. #/dashboard would become #%2Fdashboard= after URLSearchParams round-trip).
         if (this.options.responseMode === 'fragment') {
-            // Only rewrite the fragment when it actually contains OAuth params.
-            // If the hash looks like a client-side route (e.g. #/dashboard) and
-            // none of the OAuth params are present, leave it verbatim to avoid
-            // URLSearchParams encoding it into #%2Fdashboard=.
             const hashParams = new URLSearchParams(url.hash.slice(1));
             if (oauthParams.some(p => hashParams.has(p))) {
                 oauthParams.forEach(p => hashParams.delete(p));
                 const remaining = hashParams.toString();
                 url.hash = remaining ? remaining : '';
             }
-        } else {
-            // Query mode: remove OAuth params from the query string only; leave the fragment intact.
-            oauthParams.forEach(p => url.searchParams.delete(p));
         }
+
         window.history.replaceState(null, '', url.toString());
     }
 
