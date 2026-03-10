@@ -262,6 +262,36 @@ describe('AuthenticationContext', function() {
 
     });
 
+    describe('onSignIn', function() {
+
+        it('resolves immediately when already signed in after initialization completes', async () => {
+            let initResolve: () => void;
+            const initPromise = new Promise<void>(r => { initResolve = r; });
+            (authenticationContext as any)._initPromise = null;
+            (authenticationContext as any).ensureInitialized = () => {
+                (authenticationContext as any)._initPromise = initPromise;
+                return initPromise;
+            };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+
+            // Not resolved yet — init hasn't finished
+            let resolved = false;
+            signInPromise.then(() => { resolved = true; });
+            await Promise.resolve();
+            expect(resolved).toBe(false);
+
+            // Simulate init completing with a valid token
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            (authenticationContext as any).callSignInResolvers();
+            initResolve!();
+            await signInPromise;
+            expect(resolved).toBe(true);
+        });
+
+    });
+
     describe('setState', function() {
 
         it('generates a unique state key on each call', () => {

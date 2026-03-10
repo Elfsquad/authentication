@@ -85,10 +85,10 @@ export class AuthenticationContext {
      * @returns promise that resolves when the user has signed in. If
      * the user is already signed in, the promise resolves immediately.
      */
-    public onSignIn(): Promise<void> {
-        this.ensureInitialized();
+    public async onSignIn(): Promise<void> {
+        await this.ensureInitialized();
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve();
+            return;
         }
         return new Promise<void>((resolve, reject) => {
             this.onSignInResolvers.push(resolve);
