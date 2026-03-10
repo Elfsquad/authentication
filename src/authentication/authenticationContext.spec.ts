@@ -117,6 +117,19 @@ describe('AuthenticationContext', function() {
             expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
         });
 
+        it('does not store refresh_token in elfsquad_token_response when storeRefreshToken is provided', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.storeRefreshToken = storeRefreshTokenMock;
+            fakeTokenResponse.toJson = function() {
+                return { access_token: 'ACCESS_TOKEN', refresh_token: this.refreshToken };
+            };
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            const stored = JSON.parse(localStorage.getItem('elfsquad_token_response') || '{}');
+            expect(stored.refresh_token).toBeUndefined();
+        });
+
         it('does not save refresh token to localStorage when only refreshAccessToken is provided', async () => {
             (authenticationContext as any).options.refreshAccessToken = jest.fn();
 
@@ -209,6 +222,42 @@ describe('AuthenticationContext', function() {
 
             expect(refreshAccessTokenMock).toHaveBeenCalled();
             expect(idToken).toBe('NEW_ID_TOKEN');
+        });
+
+    });
+
+    describe('initialize', function() {
+
+        it('falls through to completeAuthorizationRequest when refreshAccessToken fails', async () => {
+            const completeAuthMock = jest.fn().mockResolvedValue(null);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: jest.fn().mockRejectedValue(new Error('401 Unauthorized')),
+            });
+            (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.isSignedIn();
+            errorSpy.mockRestore();
+
+            expect(completeAuthMock).toHaveBeenCalled();
+        });
+
+        it('does not call completeAuthorizationRequest when refreshAccessToken succeeds', async () => {
+            const completeAuthMock = jest.fn().mockResolvedValue(null);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+            });
+            (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
+
+            await authenticationContext.isSignedIn();
+
+            expect(completeAuthMock).not.toHaveBeenCalled();
         });
 
     });

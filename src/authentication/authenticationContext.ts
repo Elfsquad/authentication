@@ -441,6 +441,7 @@ export class AuthenticationContext {
 
         if (this.options.storeRefreshToken) {
             await this.options.storeRefreshToken(this.accessTokenResponse.refreshToken);
+            this.accessTokenResponse.refreshToken = undefined;
         } else if (!this.options.refreshAccessToken) {
             TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
         }
@@ -474,11 +475,11 @@ export class AuthenticationContext {
             try {
                 await this.refreshAccessToken();
                 this.callSignInResolvers();
+                return;
             } catch (e) {
                 console.error('Failed to refresh access token', e);
                 this.deleteTokens();
             }
-            return;
         }
 
         const result = await this.authorizationHandler.completeAuthorizationRequest();
