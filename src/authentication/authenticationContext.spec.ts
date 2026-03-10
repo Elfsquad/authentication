@@ -221,6 +221,10 @@ describe('AuthenticationContext', function() {
             };
             fakeRequest = { internal: {} };
             fakeResponse = { code: 'AUTH_CODE' };
+
+            // onAuthorization reads state from window.location.href; provide a valid one.
+            delete (window as any).location;
+            (window as any).location = { href: 'https://test/callback?state=TEST_STATE', hash: '' };
         });
 
         it('calls storeRefreshToken instead of saving to localStorage when provided', async () => {
