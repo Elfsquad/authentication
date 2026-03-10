@@ -255,6 +255,8 @@ describe('AuthenticationContext', function() {
             fakeResponse = { code: 'AUTH_CODE' };
 
             // onAuthorization reads state from window.location.href; provide a valid one.
+            // Spy before deleting location, as jsdom loses window.history after deletion.
+            jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
             delete (window as any).location;
             (window as any).location = { href: 'https://test/callback?state=TEST_STATE', hash: '' };
         });

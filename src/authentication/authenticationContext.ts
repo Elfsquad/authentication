@@ -417,7 +417,7 @@ export class AuthenticationContext {
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
         this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)?.[1]
-        window.location.hash = '';
+        this.sanitizeRedirectUrl();
 
         if (this.state === undefined || this.state === null) {
             this.callSignInRejectors(new Error("Missing 'state' parameter in authorization response URL."));
@@ -513,6 +513,13 @@ export class AuthenticationContext {
         if (result) {
             await this.onAuthorization(result.request, result.response, result.error);
         }
+    }
+
+    private sanitizeRedirectUrl(): void {
+        const url = new URL(window.location.href);
+        ['code', 'state', 'session_state', 'iss'].forEach(p => url.searchParams.delete(p));
+        url.hash = '';
+        window.history.replaceState(null, '', url.toString());
     }
 
     private callSignInResolvers(): void {

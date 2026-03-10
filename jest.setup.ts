@@ -7,5 +7,7 @@ const localStorageMock = {
     clear: () => { Object.keys(store).forEach(k => delete store[k]); },
 };
 (global as any).localStorage = localStorageMock;
-(global as any).window = { localStorage: localStorageMock, location: {} };
+const historyMock = { replaceState: () => {} };
+(global as any).window = { localStorage: localStorageMock, location: {}, history: historyMock };
 (global as any).location = {};
+(global as any).history = historyMock;
