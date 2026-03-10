@@ -263,13 +263,13 @@ export class AuthenticationContext {
      *   console.log('Id token:', idToken);
      * });
      * ```
-     * @returns promise that resolves with the id token.
+     * @returns promise that resolves with the id token, or null if unavailable.
      */
-    public async getIdToken(): Promise<string> {
+    public async getIdToken(): Promise<string | null> {
         await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return this.accessTokenResponse.idToken;
+            return this.accessTokenResponse.idToken ?? null;
         }
 
         if (!TokenStore.hasRefreshToken() && !this.options.refreshAccessToken) {
@@ -278,7 +278,7 @@ export class AuthenticationContext {
         }
 
         await this.refreshAccessToken();
-        return this.accessTokenResponse.idToken;
+        return this.accessTokenResponse.idToken ?? null;
     }
 
     /**
