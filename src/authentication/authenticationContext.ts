@@ -62,6 +62,12 @@ export class AuthenticationContext {
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
         if (!options.responseMode) { options.responseMode = 'fragment'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
+        if (options.storeRefreshToken && !options.refreshAccessToken) {
+            throw new Error('@elfsquad/authentication: storeRefreshToken requires refreshAccessToken. The refresh token will be stored server-side but the built-in refresh flow reads from localStorage, so subsequent refreshes would fail. Provide refreshAccessToken alongside storeRefreshToken.');
+        }
+        if (options.refreshAccessToken && !options.storeRefreshToken) {
+            throw new Error('@elfsquad/authentication: refreshAccessToken requires storeRefreshToken. The refresh token obtained during login would not be stored anywhere, so the custom refresh flow would have nothing to work with. Provide storeRefreshToken alongside refreshAccessToken.');
+        }
 
         this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);

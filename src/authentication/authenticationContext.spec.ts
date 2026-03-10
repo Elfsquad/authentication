@@ -36,6 +36,35 @@ describe('AuthenticationContext', function() {
         localStorage.clear();
     });
 
+    describe('constructor validation', function() {
+
+        it('throws when storeRefreshToken is provided without refreshAccessToken', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+            })).toThrow('storeRefreshToken requires refreshAccessToken');
+        });
+
+        it('throws when refreshAccessToken is provided without storeRefreshToken', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                refreshAccessToken: jest.fn(),
+            })).toThrow('refreshAccessToken requires storeRefreshToken');
+        });
+
+        it('does not throw when both storeRefreshToken and refreshAccessToken are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+            })).not.toThrow();
+        });
+
+    });
+
     describe('signOut', function() {
 
         it('should not be logged in', async () => {
@@ -76,6 +105,7 @@ describe('AuthenticationContext', function() {
                 redirectUri: 'REDIRECT_URI',
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
             (authenticationContext as any)._initPromise = Promise.resolve();
@@ -91,6 +121,7 @@ describe('AuthenticationContext', function() {
                 redirectUri: 'REDIRECT_URI',
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
             (authenticationContext as any)._initPromise = Promise.resolve();
@@ -250,6 +281,7 @@ describe('AuthenticationContext', function() {
                 redirectUri: 'REDIRECT_URI',
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: jest.fn().mockRejectedValue(new Error('401 Unauthorized')),
+                storeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
 
@@ -267,6 +299,7 @@ describe('AuthenticationContext', function() {
                 redirectUri: 'REDIRECT_URI',
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                storeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
 
