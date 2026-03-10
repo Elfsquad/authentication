@@ -26,7 +26,7 @@ class CustomFetchRequestor {
 }
 
 export class AuthenticationContext {
-    private accessTokenResponse: TokenResponse | undefined;
+    private accessTokenResponse: TokenResponse | null = null;
     private configuration: AuthorizationServiceConfiguration;
     private authorizationHandler: AuthorizationHandler;
     private tokenHandler: BaseTokenRequestHandler;
@@ -211,7 +211,7 @@ export class AuthenticationContext {
         return this.validateAccessTokenResponse();
     }
 
-    private _refreshTokenPromise: Promise<string> = null;
+    private _refreshTokenPromise: Promise<string> | null = null;
     /**
      * This method can be used to get the access token. This method will
      * automatically refresh the access token if it has expired and a
