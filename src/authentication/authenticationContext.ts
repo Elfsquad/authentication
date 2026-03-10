@@ -389,7 +389,7 @@ export class AuthenticationContext {
         if (!this._initPromise) {
             this._initPromise = this.initialize().catch((error) => {
                 // Clear cached promise on failure so subsequent calls can retry initialization.
-                this._initPromise = undefined as any;
+                this._initPromise = null;
                 throw error;
             });
         }
