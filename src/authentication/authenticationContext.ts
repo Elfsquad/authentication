@@ -416,7 +416,11 @@ export class AuthenticationContext {
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
-        this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)?.[1]
+        const parsedUrl = new URL(locationVariable);
+        const params = this.options.responseMode === 'fragment'
+            ? new URLSearchParams(parsedUrl.hash.slice(1))
+            : parsedUrl.searchParams;
+        this.state = params.get('state') ?? undefined;
         this.sanitizeRedirectUrl();
 
         if (this.state === undefined || this.state === null) {

@@ -258,7 +258,7 @@ describe('AuthenticationContext', function() {
             // Spy before deleting location, as jsdom loses window.history after deletion.
             jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
             delete (window as any).location;
-            (window as any).location = { href: 'https://test/callback?state=TEST_STATE', hash: '' };
+            (window as any).location = { href: 'https://test/callback#state=TEST_STATE', hash: '#state=TEST_STATE' };
         });
 
         it('calls storeRefreshToken instead of saving to localStorage when provided', async () => {
