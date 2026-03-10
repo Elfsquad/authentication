@@ -27,6 +27,8 @@ export interface IAuthenticationOptions{
      * refresh token flow (which reads from localStorage). Use this to
      * implement secure refresh flows, e.g. via an HttpOnly-cookie-backed
      * backend endpoint.
+     * 
+     * Must be provided together with storeRefreshToken and revokeRefreshToken.
      *
      * @returns a promise that resolves with the new access token and its
      * lifetime in seconds.
@@ -39,7 +41,7 @@ export interface IAuthenticationOptions{
      * existing localStorage token on the next page load. After the callback
      * resolves, the token is removed from localStorage.
      *
-     * Must be provided together with refreshAccessToken.
+     * Must be provided together with refreshAccessToken and revokeRefreshToken.
     */
     storeRefreshToken?: (refreshToken: string) => Promise<void>;
     /**
@@ -47,6 +49,8 @@ export interface IAuthenticationOptions{
      * When provided, the library calls this instead of the built-in revocation
      * flow (which reads from localStorage). Use this to revoke the server-side
      * session and clear the HttpOnly cookie set by storeRefreshToken.
+     * 
+     * Must be provided together with refreshAccessToken and storeRefreshToken.
     */
     revokeRefreshToken?: () => Promise<void>;
     /**
