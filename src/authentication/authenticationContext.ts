@@ -62,11 +62,9 @@ export class AuthenticationContext {
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
         if (!options.responseMode) { options.responseMode = 'fragment'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
-        if (options.storeRefreshToken && !options.refreshAccessToken) {
-            throw new Error('@elfsquad/authentication: storeRefreshToken requires refreshAccessToken. The refresh token will be stored server-side but the built-in refresh flow reads from localStorage, so subsequent refreshes would fail. Provide refreshAccessToken alongside storeRefreshToken.');
-        }
-        if (options.refreshAccessToken && !options.storeRefreshToken) {
-            throw new Error('@elfsquad/authentication: refreshAccessToken requires storeRefreshToken. The refresh token obtained during login would not be stored anywhere, so the custom refresh flow would have nothing to work with. Provide storeRefreshToken alongside refreshAccessToken.');
+        if ((options.storeRefreshToken || options.refreshAccessToken || options.revokeRefreshToken) &&
+            !(options.storeRefreshToken && options.refreshAccessToken && options.revokeRefreshToken)) {
+            throw new Error('@elfsquad/authentication: storeRefreshToken, refreshAccessToken, and revokeRefreshToken must all be provided together or not at all.');
         }
 
         this.fetchRequestor = new CustomFetchRequestor();
@@ -154,8 +152,11 @@ export class AuthenticationContext {
     }
 
     private revokeRefreshToken(): Promise<any> {
+        if (this.options.revokeRefreshToken) {
+            return this.options.revokeRefreshToken();
+        }
         if (!TokenStore.hasRefreshToken()) {
-          return Promise.resolve();
+            return Promise.resolve();
         }
         return this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
     }
@@ -340,13 +341,14 @@ export class AuthenticationContext {
 
     private async refreshAccessToken(): Promise<string> {
         if (this.options.refreshAccessToken) {
+            const previousIdToken = this.accessTokenResponse?.idToken;
             const result = await this.options.refreshAccessToken();
             this.accessTokenResponse = new TokenResponse({
                 access_token: result.accessToken,
                 expires_in: result.expiresIn.toString(),
                 issued_at: Math.floor(Date.now() / 1000),
                 token_type: 'bearer',
-                id_token: result.idToken,
+                id_token: result.idToken ?? previousIdToken,
             });
             TokenStore.saveTokenResponse(this.accessTokenResponse);
             return result.accessToken;

@@ -38,28 +38,55 @@ describe('AuthenticationContext', function() {
 
     describe('constructor validation', function() {
 
-        it('throws when storeRefreshToken is provided without refreshAccessToken', () => {
+        const expectedError = 'storeRefreshToken, refreshAccessToken, and revokeRefreshToken must all be provided together or not at all.';
+
+        it('throws when only storeRefreshToken is provided', () => {
             expect(() => new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
                 storeRefreshToken: jest.fn(),
-            })).toThrow('storeRefreshToken requires refreshAccessToken');
+            })).toThrow(expectedError);
         });
 
-        it('throws when refreshAccessToken is provided without storeRefreshToken', () => {
+        it('throws when only refreshAccessToken is provided', () => {
             expect(() => new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
                 refreshAccessToken: jest.fn(),
-            })).toThrow('refreshAccessToken requires storeRefreshToken');
+            })).toThrow(expectedError);
         });
 
-        it('does not throw when both storeRefreshToken and refreshAccessToken are provided', () => {
+        it('throws when only revokeRefreshToken is provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                revokeRefreshToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('throws when only two of the three proxy options are provided', () => {
             expect(() => new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
                 storeRefreshToken: jest.fn(),
                 refreshAccessToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('does not throw when all three proxy options are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            })).not.toThrow();
+        });
+
+        it('does not throw when none of the proxy options are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
             })).not.toThrow();
         });
 
@@ -71,6 +98,31 @@ describe('AuthenticationContext', function() {
             expect(await authenticationContext.isSignedIn()).toBe(true);
             await authenticationContext.signOut();
             expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('calls revokeRefreshToken option instead of built-in localStorage revocation when provided', async () => {
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.revokeRefreshToken = revokeRefreshTokenMock;
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: jest.fn().mockResolvedValue(true) };
+
+            await authenticationContext.signOut();
+
+            expect(revokeRefreshTokenMock).toHaveBeenCalled();
+        });
+
+        it('does not call built-in revocation when revokeRefreshToken option is provided', async () => {
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
+            (authenticationContext as any).options.revokeRefreshToken = revokeRefreshTokenMock;
+            const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
+            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: performRevokeTokenRequestMock };
+
+            await authenticationContext.signOut();
+
+            const revokeCallsForRefreshToken = performRevokeTokenRequestMock.mock.calls
+                .filter(([, req]) => req?.tokenTypeHint === 'refresh_token');
+            expect(revokeCallsForRefreshToken).toHaveLength(0);
         });
 
     });
@@ -106,12 +158,30 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: refreshMock,
                 storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
             (authenticationContext as any)._initPromise = Promise.resolve();
 
             await authenticationContext.getAccessToken();
             expect(await authenticationContext.getIdToken()).toBe('CUSTOM_ID_TOKEN');
+        });
+
+        it('preserves previous idToken when custom refreshAccessToken does not return one', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600 });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false, idToken: 'ORIGINAL_ID_TOKEN' };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            await authenticationContext.getAccessToken();
+            expect(await authenticationContext.getIdToken()).toBe('ORIGINAL_ID_TOKEN');
         });
 
         it('calls custom refreshAccessToken option when provided and token is expired', async () => {
@@ -122,6 +192,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: refreshMock,
                 storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
             (authenticationContext as any)._initPromise = Promise.resolve();
@@ -202,6 +273,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
             localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
@@ -220,6 +292,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
             localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
@@ -240,6 +313,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
 
@@ -282,6 +356,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: jest.fn().mockRejectedValue(new Error('401 Unauthorized')),
                 storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
 
@@ -300,6 +375,7 @@ describe('AuthenticationContext', function() {
                 fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
                 storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
             });
             (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
 

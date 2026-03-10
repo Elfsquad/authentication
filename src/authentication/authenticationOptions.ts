@@ -38,8 +38,17 @@ export interface IAuthenticationOptions{
      * token to localStorage — both on initial login and when migrating an
      * existing localStorage token on the next page load. After the callback
      * resolves, the token is removed from localStorage.
+     *
+     * Must be provided together with refreshAccessToken.
     */
     storeRefreshToken?: (refreshToken: string) => Promise<void>;
+    /**
+     * Optional callback to revoke the server-side refresh token during sign-out.
+     * When provided, the library calls this instead of the built-in revocation
+     * flow (which reads from localStorage). Use this to revoke the server-side
+     * session and clear the HttpOnly cookie set by storeRefreshToken.
+    */
+    revokeRefreshToken?: () => Promise<void>;
     /**
      * Optional factory that returns the OpenID Connect service configuration.
      * When provided, the library calls this instead of fetching the OIDC
