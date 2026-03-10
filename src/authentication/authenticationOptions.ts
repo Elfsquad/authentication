@@ -1,3 +1,5 @@
+import type { AuthorizationServiceConfiguration } from '@openid/appauth/built/authorization_service_configuration';
+
 export interface IAuthenticationOptions{
     /**
      * The client ID of your OpenID Connect application.
@@ -38,4 +40,11 @@ export interface IAuthenticationOptions{
      * resolves, the token is removed from localStorage.
     */
     storeRefreshToken?: (refreshToken: string) => Promise<void>;
+    /**
+     * Optional factory that returns the OpenID Connect service configuration.
+     * When provided, the library calls this instead of fetching the OIDC
+     * discovery document from the issuer URL. Useful for testing and for
+     * environments where the discovery endpoint is unavailable.
+    */
+    fetchServiceConfiguration?: () => Promise<AuthorizationServiceConfiguration>;
 }

@@ -1,6 +1,15 @@
 import 'jest';
 import * as fetchMock from 'fetch-mock'
+import { AuthorizationServiceConfiguration } from '@openid/appauth/built/authorization_service_configuration';
 import { AuthenticationContext } from '..';
+
+const fakeConfig = new AuthorizationServiceConfiguration({
+    authorization_endpoint: 'https://test/auth',
+    token_endpoint: 'https://test/token',
+    revocation_endpoint: 'https://test/revoke',
+    end_session_endpoint: 'https://test/logout',
+    userinfo_endpoint: 'https://test/userinfo',
+});
 
 describe('AuthenticationContext', function() {
 
@@ -10,15 +19,17 @@ describe('AuthenticationContext', function() {
         localStorage.clear();
         authenticationContext = new AuthenticationContext({
             clientId: 'CLIENT_ID',
-            redirectUri: 'REDIRECT_URI'
+            redirectUri: 'REDIRECT_URI',
+            fetchServiceConfiguration: async () => fakeConfig,
         });
 
         (authenticationContext as any).accessTokenResponse = {
             isValid: () => true
         };
+        (authenticationContext as any).configuration = fakeConfig;
 
-        (authenticationContext as any).configuration = { something: 'here', endSessionEndpoint: 'https://test/logout' };
-        (authenticationContext as any).isInitialized = true;
+        // Skip the async initialization chain for tests that don't exercise it.
+        (authenticationContext as any)._initPromise = Promise.resolve();
     });
 
     afterEach(() => {
@@ -63,11 +74,11 @@ describe('AuthenticationContext', function() {
             authenticationContext = new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
                 refreshAccessToken: refreshMock,
             });
-            (authenticationContext as any).configuration = { something: 'here', endSessionEndpoint: 'https://test/logout' };
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
-            (authenticationContext as any).isInitialized = true;
+            (authenticationContext as any)._initPromise = Promise.resolve();
 
             const token = await authenticationContext.getAccessToken();
             expect(refreshMock).toHaveBeenCalled();
@@ -124,24 +135,19 @@ describe('AuthenticationContext', function() {
 
     describe('initialize migration', function() {
 
-        // Helper: let the constructor's async initialize() drain completely before
-        // setting up test state, so only the explicit initialize() call is tested.
-        const drainConstructor = () => new Promise<void>(resolve => setImmediate(resolve));
-
         it('calls storeRefreshToken with existing token and removes it from localStorage', async () => {
             const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
             authenticationContext = new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
             });
-            await drainConstructor();
-            (authenticationContext as any).configuration = { something: 'here', endSessionEndpoint: 'https://test/logout' };
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
             localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
 
-            await (authenticationContext as any).initialize();
+            await authenticationContext.isSignedIn();
 
             expect(storeRefreshTokenMock).toHaveBeenCalledWith('EXISTING_TOKEN');
             expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
@@ -152,16 +158,15 @@ describe('AuthenticationContext', function() {
             authenticationContext = new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
             });
-            await drainConstructor();
-            (authenticationContext as any).configuration = { something: 'here', endSessionEndpoint: 'https://test/logout' };
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
             localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
 
             const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-            await (authenticationContext as any).initialize();
+            await authenticationContext.isSignedIn();
             errorSpy.mockRestore();
 
             expect(localStorage.getItem('elfsquad_refresh_token')).toBe('EXISTING_TOKEN');
@@ -173,14 +178,13 @@ describe('AuthenticationContext', function() {
             authenticationContext = new AuthenticationContext({
                 clientId: 'CLIENT_ID',
                 redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
                 storeRefreshToken: storeRefreshTokenMock,
                 refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
             });
-            await drainConstructor();
-            (authenticationContext as any).configuration = { something: 'here', endSessionEndpoint: 'https://test/logout' };
             (authenticationContext as any).accessTokenResponse = { isValid: () => true };
 
-            await (authenticationContext as any).initialize();
+            await authenticationContext.isSignedIn();
 
             expect(storeRefreshTokenMock).not.toHaveBeenCalled();
         });

@@ -35,9 +35,8 @@ export class AuthenticationContext {
 
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
-    private signedInResolvers: any[] = [];
 
-    private isInitialized = false;
+    private _initPromise: Promise<void> | null = null;
 
     private state: string;
 
@@ -67,7 +66,6 @@ export class AuthenticationContext {
         this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
         this.authorizationHandler = new AuthorizationHandler(options.responseMode);
-        this.initialize();
     }
 
     /**
@@ -88,16 +86,14 @@ export class AuthenticationContext {
      * the user is already signed in, the promise resolves immediately.
      */
     public onSignIn(): Promise<void> {
-        // If the user is already authetnicated, resolve immediately
+        this.ensureInitialized();
         if (this.validateAccessTokenResponse()) {
             return Promise.resolve();
         }
-
-        let promise = new Promise<void>((resolve, reject) => {
+        return new Promise<void>((resolve, reject) => {
             this.onSignInResolvers.push(resolve);
             this.onSignInRejectors.push(reject);
         });
-        return promise;
     }
 
     /**
@@ -203,17 +199,9 @@ export class AuthenticationContext {
      *
      * @returns promise that resolves with a boolean indicating if the user is signed in.
      */
-    public isSignedIn(): Promise<boolean> {
-        let promise = new Promise<boolean>((resolve, _) => {
-            if (this.isInitialized) {
-                resolve(this.validateAccessTokenResponse());
-                return;
-            }
-
-            this.signedInResolvers.push(resolve);
-        });
-
-        return promise;
+    public async isSignedIn(): Promise<boolean> {
+        await this.ensureInitialized();
+        return this.validateAccessTokenResponse();
     }
 
     private _refreshTokenPromise: Promise<string> = null;
@@ -233,14 +221,14 @@ export class AuthenticationContext {
      * @returns promise that resolves with the access token.
      */
     public async getAccessToken(): Promise<string> {
-        await this.waitFor(() => this.isInitialized);
+        await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve(this.accessTokenResponse.accessToken);
+            return this.accessTokenResponse.accessToken;
         }
 
         if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
-            return Promise.resolve(null);
+            return null;
         }
 
         if (this._refreshTokenPromise) {
@@ -248,7 +236,7 @@ export class AuthenticationContext {
         }
 
         this._refreshTokenPromise = this.refreshAccessToken();
-        let accessToken = await this._refreshTokenPromise;
+        const accessToken = await this._refreshTokenPromise;
         this._refreshTokenPromise = null;
         return accessToken;
     }
@@ -269,22 +257,19 @@ export class AuthenticationContext {
      * @returns promise that resolves with the id token.
      */
     public async getIdToken(): Promise<string> {
-        if (!this.configuration) {
-            console.error('@elfsquad/authentication: No service configuration found');
-            return Promise.resolve(null);
-        }
+        await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve(this.accessTokenResponse.idToken);
+            return this.accessTokenResponse.idToken;
         }
 
         if (!TokenStore.hasRefreshToken() && !this.options.refreshAccessToken) {
             console.log('@elfsquad/authentication: No refresh token found');
-            return Promise.resolve(null);
+            return null;
         }
 
         await this.refreshAccessToken();
-        return Promise.resolve(this.accessTokenResponse.idToken);
+        return this.accessTokenResponse.idToken;
     }
 
     /**
@@ -383,8 +368,19 @@ export class AuthenticationContext {
     }
 
     private async fetchConfiguration(): Promise<void> {
-        if (!!this.configuration) { return; }
-        this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
+        if (this.configuration) { return; }
+        if (this.options.fetchServiceConfiguration) {
+            this.configuration = await this.options.fetchServiceConfiguration();
+        } else {
+            this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
+        }
+    }
+
+    private ensureInitialized(): Promise<void> {
+        if (!this._initPromise) {
+            this._initPromise = this.initialize();
+        }
+        return this._initPromise;
     }
 
     private makeAuthorizationRequest(options: object) {
@@ -442,7 +438,7 @@ export class AuthenticationContext {
 
         this.accessTokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
-            
+
         if (this.options.storeRefreshToken) {
             await this.options.storeRefreshToken(this.accessTokenResponse.refreshToken);
         } else if (!this.options.refreshAccessToken) {
@@ -469,49 +465,25 @@ export class AuthenticationContext {
             }
         }
 
-        // If the access token is still valid, we do not need to refresh
         if (this.validateAccessTokenResponse()) {
-            this.isInitialized = true;
             this.callSignInResolvers();
-            this.callSignedInResolvers();
             return;
         }
 
         if (TokenStore.hasRefreshToken() || this.options.refreshAccessToken) {
-            await this.fetchConfiguration();
-            this.refreshAccessToken()
-                .then(() => {
-                    this.callSignInResolvers();
-                })
-                .catch((e) => {
-                    console.error('Failed to refresh access token', e);
-                    this.deleteTokens();
-                })
-                .finally(() => {
-                    this.isInitialized = true;
-                    this.callSignedInResolvers();
-                });
-
+            try {
+                await this.refreshAccessToken();
+                this.callSignInResolvers();
+            } catch (e) {
+                console.error('Failed to refresh access token', e);
+                this.deleteTokens();
+            }
             return;
         }
 
-        this.completeAuthorizationRequest();
-    }
-
-    private completeAuthorizationRequest(): void {
-        this.authorizationHandler.completeAuthorizationRequest()
-            .then(async (result) => {
-                this.isInitialized = true;
-                if (!!result) {
-                    await this.onAuthorization(result.request, result.response, result.error);
-                }
-                this.callSignedInResolvers();
-            });
-    }
-
-    private callSignedInResolvers(): void {
-        for (let signedInResolver of this.signedInResolvers) {
-            signedInResolver(this.validateAccessTokenResponse());
+        const result = await this.authorizationHandler.completeAuthorizationRequest();
+        if (result) {
+            await this.onAuthorization(result.request, result.response, result.error);
         }
     }
 
@@ -519,14 +491,6 @@ export class AuthenticationContext {
         for (let onSignInResolver of this.onSignInResolvers) {
             onSignInResolver();
         }
-    }
-
-    private sleep(ms: number): Promise<void> {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    private async waitFor(f: () => boolean): Promise<void> {
-      while(!f()) await this.sleep(200);
     }
 }
 
