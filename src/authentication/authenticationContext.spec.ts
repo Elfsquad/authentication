@@ -132,6 +132,19 @@ describe('AuthenticationContext', function() {
             expect(revokeRefreshTokenMock).toHaveBeenCalled();
         });
 
+        it('still clears tokens and redirects when both revokeRefreshToken and revokeAccessToken reject', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh failed'));
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            errorSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
         it('still clears local tokens and redirects when revokeRefreshToken rejects', async () => {
             authenticationContext = new AuthenticationContext({
                 clientId: 'CLIENT_ID',
@@ -174,6 +187,106 @@ describe('AuthenticationContext', function() {
             const revokeCallsForRefreshToken = performRevokeTokenRequestMock.mock.calls
                 .filter(([, req]) => req?.tokenTypeHint === 'refresh_token');
             expect(revokeCallsForRefreshToken).toHaveLength(0);
+        });
+
+    });
+
+    describe('revokeTokens', function() {
+
+        it('starts both revocations concurrently before either settles', async () => {
+            // Use manually-controlled Promises so we can assert both private methods
+            // were called before either resolves — proving parallel dispatch, not
+            // sequential awaiting.
+            let resolveRefresh!: () => void;
+            let resolveAccess!: () => void;
+            const refreshPromise = new Promise<void>(r => { resolveRefresh = r; });
+            const accessPromise  = new Promise<void>(r => { resolveAccess  = r; });
+
+            const refreshSpy = jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockReturnValue(refreshPromise);
+            const accessSpy  = jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockReturnValue(accessPromise);
+
+            const revokeTokensPromise = (authenticationContext as any).revokeTokens();
+
+            // Both must be called synchronously (before any promise settles),
+            // proving they were started in parallel rather than awaited in sequence.
+            expect(refreshSpy).toHaveBeenCalledTimes(1);
+            expect(accessSpy).toHaveBeenCalledTimes(1);
+
+            resolveRefresh();
+            resolveAccess();
+            await revokeTokensPromise;
+        });
+
+        it('still runs revokeAccessToken when revokeRefreshToken rejects', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh revocation failed'));
+            const accessSpy = jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockResolvedValue(undefined);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            errorSpy.mockRestore();
+
+            expect(accessSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('still runs revokeRefreshToken when revokeAccessToken rejects', async () => {
+            const refreshSpy = jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockResolvedValue(undefined);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access revocation failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            errorSpy.mockRestore();
+
+            expect(refreshSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('resolves without throwing even when both revocations reject', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh failed'));
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await expect((authenticationContext as any).revokeTokens()).resolves.toBeUndefined();
+            errorSpy.mockRestore();
+        });
+
+        it('logs one console.error per revocation failure', async () => {
+            const refreshError = new Error('refresh failed');
+            const accessError  = new Error('access failed');
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(refreshError);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(accessError);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+
+            expect(errorSpy).toHaveBeenCalledTimes(2);
+            expect(errorSpy).toHaveBeenCalledWith(
+                '@elfsquad/authentication: Token revocation failed during sign-out',
+                refreshError,
+            );
+            expect(errorSpy).toHaveBeenCalledWith(
+                '@elfsquad/authentication: Token revocation failed during sign-out',
+                accessError,
+            );
+            errorSpy.mockRestore();
+        });
+
+        it('does not log when both revocations succeed', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken').mockResolvedValue(undefined);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken').mockResolvedValue(undefined);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            expect(errorSpy).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
         });
 
     });

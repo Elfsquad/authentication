@@ -139,12 +139,7 @@ export class AuthenticationContext {
         } catch (e) {
             console.warn('@elfsquad/authentication: Could not retrieve id token for sign-out hint', e);
         }
-        const revocations = await this.revokeTokens();
-        for (const result of revocations) {
-            if (result.status === 'rejected') {
-                console.error('@elfsquad/authentication: Token revocation failed during sign-out', result.reason);
-            }
-        }
+        await this.revokeTokens();
         this.deleteTokens();
         await this.endSession(postLogoutRedirectUri, idTokenHint);
     }
@@ -155,11 +150,19 @@ export class AuthenticationContext {
         TokenStore.deleteTokenResponse();
     }
 
-    private revokeTokens(): Promise<any> {
-        return Promise.allSettled([
-          this.revokeRefreshToken(),
-          this.revokeAccessToken(),
-        ]);
+    private revokeTokens(): Promise<void> {
+        // Promise.allSettled is ES2020 and this package targets ES2015, so we
+        // use Promise.all with per-promise .catch() wrappers instead.  Each
+        // revocation failure is logged here and then swallowed so the other
+        // revocation and the rest of signOut() always proceed.
+        return Promise.all([
+            this.revokeRefreshToken().catch((e) => {
+                console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+            }),
+            this.revokeAccessToken().catch((e) => {
+                console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+            }),
+        ]).then(() => undefined);
     }
 
     private revokeRefreshToken(): Promise<any> {
