@@ -103,6 +103,16 @@ describe('AuthenticationContext', function() {
             expect(await authenticationContext.isSignedIn()).toBe(false);
         });
 
+        it('completes sign-out even when getIdToken throws due to expired token with no refresh source', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            warnSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
         it('calls revokeRefreshToken option instead of built-in localStorage revocation when provided', async () => {
             const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
             authenticationContext = new AuthenticationContext({

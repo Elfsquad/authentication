@@ -133,7 +133,12 @@ export class AuthenticationContext {
      */
     public async signOut(postLogoutRedirectUri: string | null = null) {
         await this.fetchConfiguration();
-        const idTokenHint = await this.getIdToken();
+        let idTokenHint: string | null = null;
+        try {
+            idTokenHint = await this.getIdToken();
+        } catch (e) {
+            console.warn('@elfsquad/authentication: Could not retrieve id token for sign-out hint', e);
+        }
         const revocations = await this.revokeTokens();
         for (const result of revocations) {
             if (result.status === 'rejected') {
