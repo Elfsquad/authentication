@@ -477,21 +477,25 @@ export class AuthenticationContext {
             await this.fetchConfiguration();
         }
 
-        this.accessTokenResponse = await this.tokenHandler
+        const tokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
 
-        const refreshToken = this.accessTokenResponse.refreshToken;
+        const refreshToken = tokenResponse.refreshToken;
         if (this.options.storeRefreshToken) {
             if (!refreshToken) {
                 const err = new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.');
                 this.callSignInRejectors(err);
                 throw err;
             }
+            // Persist server-side before committing the token to memory.
+            // If this rejects, this.accessTokenResponse stays null so the
+            // instance is not left in a half-signed-in state.
             await this.options.storeRefreshToken(refreshToken);
-            this.accessTokenResponse.refreshToken = undefined;
+            tokenResponse.refreshToken = undefined;
         } else if (!this.options.refreshAccessToken && refreshToken) {
             TokenStore.saveRefreshToken(refreshToken);
         }
+        this.accessTokenResponse = tokenResponse;
         TokenStore.saveTokenResponse(this.accessTokenResponse);
         this.callSignInResolvers();
     }
@@ -550,16 +554,14 @@ export class AuthenticationContext {
         // so values returned in an unexpected location don't linger in history/referrers.
         oauthParams.forEach(p => url.searchParams.delete(p));
 
-        // In fragment mode, also strip OAuth params from the hash — but only rewrite
+        // Also strip OAuth params from the fragment in all modes — but only rewrite
         // it when OAuth params are actually present to avoid mangling hash-based routes
         // (e.g. #/dashboard would become #%2Fdashboard= after URLSearchParams round-trip).
-        if (this.options.responseMode === 'fragment') {
-            const hashParams = new URLSearchParams(url.hash.slice(1));
-            if (oauthParams.some(p => hashParams.has(p))) {
-                oauthParams.forEach(p => hashParams.delete(p));
-                const remaining = hashParams.toString();
-                url.hash = remaining ? remaining : '';
-            }
+        const hashParams = new URLSearchParams(url.hash.slice(1));
+        if (oauthParams.some(p => hashParams.has(p))) {
+            oauthParams.forEach(p => hashParams.delete(p));
+            const remaining = hashParams.toString();
+            url.hash = remaining ? remaining : '';
         }
 
         window.history.replaceState(null, '', url.toString());

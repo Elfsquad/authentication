@@ -384,6 +384,18 @@ describe('AuthenticationContext', function() {
             expect(storeRefreshTokenMock).not.toHaveBeenCalled();
         });
 
+        it('does not set accessTokenResponse in memory when storeRefreshToken rejects', async () => {
+            (authenticationContext as any).options.storeRefreshToken = jest.fn().mockRejectedValue(new Error('network error'));
+            (authenticationContext as any).accessTokenResponse = null;
+
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow('network error');
+
+            expect((authenticationContext as any).accessTokenResponse).toBeNull();
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
         it('does not save to localStorage when neither callback is provided and refresh token is absent', async () => {
             fakeTokenResponse.refreshToken = undefined;
 
@@ -699,6 +711,20 @@ describe('AuthenticationContext', function() {
             const url = new URL(sanitized!);
             expect(url.searchParams.get('code')).toBeNull();
             expect(url.searchParams.get('state')).toBeNull();
+            expect(url.hash).toBe('');
+        });
+
+        it('strips OAuth params from the fragment in query mode', () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                responseMode: 'query',
+            });
+            (window as any).location = { href: 'https://app.example.com/callback?foo=bar#code=C&state=S' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
             expect(url.hash).toBe('');
         });
 
