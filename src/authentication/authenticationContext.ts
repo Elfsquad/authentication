@@ -283,12 +283,13 @@ export class AuthenticationContext {
             return this.accessTokenResponse.idToken ?? null;
         }
 
-        if (!TokenStore.hasRefreshToken() && !this.options.refreshAccessToken) {
-            console.log('@elfsquad/authentication: No refresh token found');
+        // Delegate to getAccessToken() so the shared _refreshTokenPromise gate is used,
+        // preventing duplicate refresh calls when getAccessToken() and getIdToken() are
+        // awaited concurrently.
+        const accessToken = await this.getAccessToken();
+        if (accessToken === null) {
             return null;
         }
-
-        await this.refreshAccessToken();
         return this.accessTokenResponse.idToken ?? null;
     }
 
@@ -435,12 +436,14 @@ export class AuthenticationContext {
         this.sanitizeRedirectUrl();
 
         if (!this.state) {
-            this.callSignInRejectors(new Error("Missing 'state' parameter in authorization response URL."));
-            return;
+            const err = new Error("Missing 'state' parameter in authorization response URL.");
+            this.callSignInRejectors(err);
+            throw err;
         }
         if (!!error) {
-            this.callSignInRejectors(error as unknown as Error);
-            return;
+            const err = error as unknown as Error;
+            this.callSignInRejectors(err);
+            throw err;
         }
 
         if (!response) { return; }
@@ -453,8 +456,9 @@ export class AuthenticationContext {
         }
 
         if (!code) {
-            this.callSignInRejectors(new Error('No authorization code found in the redirect URL.'));
-            return;
+            const err = new Error('No authorization code found in the redirect URL.');
+            this.callSignInRejectors(err);
+            throw err;
         }
 
         let tokenRequest = new TokenRequest({
@@ -479,8 +483,9 @@ export class AuthenticationContext {
         const refreshToken = this.accessTokenResponse.refreshToken;
         if (this.options.storeRefreshToken) {
             if (!refreshToken) {
-                this.callSignInRejectors(new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.'));
-                return;
+                const err = new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.');
+                this.callSignInRejectors(err);
+                throw err;
             }
             await this.options.storeRefreshToken(refreshToken);
             this.accessTokenResponse.refreshToken = undefined;

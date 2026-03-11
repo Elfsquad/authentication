@@ -290,10 +290,10 @@ describe('AuthenticationContext', function() {
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
 
             const signInPromise = authenticationContext.onSignIn();
-            // Flush microtasks so onSignIn() advances past ensureInitialized() and
-            // registers its rejector before onAuthorization() fires callSignInRejectors.
             await Promise.resolve();
-            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow("Missing 'state' parameter");
 
             await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
         });
@@ -303,12 +303,32 @@ describe('AuthenticationContext', function() {
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
 
             const signInPromise = authenticationContext.onSignIn();
-            // Flush microtasks so onSignIn() advances past ensureInitialized() and
-            // registers its rejector before onAuthorization() fires callSignInRejectors.
             await Promise.resolve();
-            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow("Missing 'state' parameter");
 
             await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
+        });
+
+        it('rejects onSignIn via ensureInitialized when initialize processes a bad redirect (regression)', async () => {
+            // Reproduces the bug: onSignIn() suspends at await ensureInitialized(), initialize()
+            // calls onAuthorization() which detects missing state and previously only called
+            // callSignInRejectors() with empty arrays, then returned normally — leaving onSignIn()
+            // waiting forever. Now onAuthorization() throws so the rejection propagates through
+            // initialize() → ensureInitialized() → onSignIn().
+            (window as any).location = { href: 'https://test/callback#code=AUTH_CODE', hash: '#code=AUTH_CODE' };
+            (authenticationContext as any)._initPromise = null;
+            (authenticationContext as any).accessTokenResponse = null;
+            (authenticationContext as any).authorizationHandler = {
+                completeAuthorizationRequest: jest.fn().mockResolvedValue({
+                    request: fakeRequest,
+                    response: fakeResponse,
+                    error: null,
+                }),
+            };
+
+            await expect(authenticationContext.onSignIn()).rejects.toThrow("Missing 'state' parameter");
         });
 
         it('calls storeRefreshToken instead of saving to localStorage when provided', async () => {
@@ -355,7 +375,10 @@ describe('AuthenticationContext', function() {
             fakeTokenResponse.refreshToken = undefined;
 
             const signInPromise = authenticationContext.onSignIn();
-            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+            await Promise.resolve();
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow('No refresh token returned');
 
             await expect(signInPromise).rejects.toThrow('No refresh token returned');
             expect(storeRefreshTokenMock).not.toHaveBeenCalled();
@@ -457,21 +480,45 @@ describe('AuthenticationContext', function() {
 
     describe('getIdToken', function() {
 
-        it('calls refreshAccessToken when provided and access token is expired', async () => {
-            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
-            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
-
-            const refreshAccessTokenMock = jest.fn().mockImplementation(async () => {
-                (authenticationContext as any).accessTokenResponse = {
-                    isValid: () => true,
-                    idToken: 'NEW_ID_TOKEN',
-                };
+        it('returns the id token after refreshing when the access token is expired', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600, idToken: 'NEW_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
             });
-            (authenticationContext as any).refreshAccessToken = refreshAccessTokenMock;
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
 
             const idToken = await authenticationContext.getIdToken();
 
-            expect(refreshAccessTokenMock).toHaveBeenCalled();
+            expect(refreshMock).toHaveBeenCalledTimes(1);
+            expect(idToken).toBe('NEW_ID_TOKEN');
+        });
+
+        it('deduplicates concurrent getAccessToken and getIdToken refresh calls', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600, idToken: 'NEW_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const [accessToken, idToken] = await Promise.all([
+                authenticationContext.getAccessToken(),
+                authenticationContext.getIdToken(),
+            ]);
+
+            expect(refreshMock).toHaveBeenCalledTimes(1);
+            expect(accessToken).toBe('NEW_TOKEN');
             expect(idToken).toBe('NEW_ID_TOKEN');
         });
 
