@@ -129,7 +129,7 @@ export class AuthenticationContext {
      * authenticationContext.signOut(postLogoutRedirectUri);
      * ```
      *
-     * @param postLogoutRedirectUri - the uri where the user will be redirected to after signing out.
+     * @param postLogoutRedirectUri - the uri string where the user will be redirected to after signing out.
      */
     public async signOut(postLogoutRedirectUri: string | null = null) {
         await this.fetchConfiguration();
@@ -231,11 +231,9 @@ export class AuthenticationContext {
      * });
      * ```
      *
-     * @returns promise that resolves with the access token, or `null` if the
-     * token has expired and no refresh source is available (no refresh token in
-     * storage and no `refreshAccessToken` callback provided).
+     * @returns promise that resolves with the access token.
      */
-    public async getAccessToken(): Promise<string | null> {
+    public async getAccessToken(): Promise<string> {
         await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
@@ -243,8 +241,7 @@ export class AuthenticationContext {
         }
 
         if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
-            console.warn('@elfsquad/authentication: Access token expired and no refresh source is available. Ensure offline_access is in the requested scope or provide a refreshAccessToken callback.');
-            return null;
+            throw new Error('@elfsquad/authentication: Access token expired and no refresh source is available. Ensure offline_access is in the requested scope or provide a refreshAccessToken callback.');
         }
 
         if (this._refreshTokenPromise) {
@@ -274,29 +271,26 @@ export class AuthenticationContext {
      *   console.log('Id token:', idToken);
      * });
      * ```
-     * @returns promise that resolves with the id token, or null if unavailable.
+     * @returns promise that resolves with the id token.
      */
-    public async getIdToken(): Promise<string | null> {
+    public async getIdToken(): Promise<string> {
         await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return this.accessTokenResponse.idToken ?? null;
+            return this.accessTokenResponse.idToken;
         }
 
         // Delegate to getAccessToken() so the shared _refreshTokenPromise gate is used,
         // preventing duplicate refresh calls when getAccessToken() and getIdToken() are
         // awaited concurrently.
-        const accessToken = await this.getAccessToken();
-        if (accessToken === null) {
-            return null;
-        }
-        return this.accessTokenResponse.idToken ?? null;
+        await this.getAccessToken();
+        return this.accessTokenResponse.idToken;
     }
 
     /**
-     * This method can be used to persist date in local storage, which
+     * This method can be used to persist data in local storage, which
      * can be used to save data between sign in attempts. This can
-     * be useful, for example, to save the url the current url before
+     * be useful, for example, to save the current url before
      * the user is redirected to the login page.
      *
      * This method user the oauth2 state parameter, which means the data
