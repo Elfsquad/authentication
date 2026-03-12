@@ -26,7 +26,7 @@ class CustomFetchRequestor {
 }
 
 export class AuthenticationContext {
-    private accessTokenResponse: TokenResponse | undefined;
+    private accessTokenResponse: TokenResponse | null = null;
     private configuration: AuthorizationServiceConfiguration;
     private authorizationHandler: AuthorizationHandler;
     private tokenHandler: BaseTokenRequestHandler;
@@ -35,9 +35,8 @@ export class AuthenticationContext {
 
     private onSignInResolvers: any[] = [];
     private onSignInRejectors: any[] = [];
-    private signedInResolvers: any[] = [];
 
-    private isInitialized = false;
+    private _initPromise: Promise<void> | null = null;
 
     private state: string;
 
@@ -63,11 +62,14 @@ export class AuthenticationContext {
         if (!options.scope) { options.scope = 'Elfskot.Api offline_access'; }
         if (!options.responseMode) { options.responseMode = 'fragment'; }
         if (options.loginUrl) { this.loginUrl = options.loginUrl; }
+        if ((options.storeRefreshToken || options.refreshAccessToken || options.revokeRefreshToken) &&
+            !(options.storeRefreshToken && options.refreshAccessToken && options.revokeRefreshToken)) {
+            throw new Error('@elfsquad/authentication: storeRefreshToken, refreshAccessToken, and revokeRefreshToken must all be provided together or not at all.');
+        }
 
         this.fetchRequestor = new CustomFetchRequestor();
         this.tokenHandler = new BaseTokenRequestHandler(this.fetchRequestor);
         this.authorizationHandler = new AuthorizationHandler(options.responseMode);
-        this.initialize();
     }
 
     /**
@@ -87,17 +89,15 @@ export class AuthenticationContext {
      * @returns promise that resolves when the user has signed in. If
      * the user is already signed in, the promise resolves immediately.
      */
-    public onSignIn(): Promise<void> {
-        // If the user is already authetnicated, resolve immediately
+    public async onSignIn(): Promise<void> {
+        await this.ensureInitialized();
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve();
+            return;
         }
-
-        let promise = new Promise<void>((resolve, reject) => {
+        return new Promise<void>((resolve, reject) => {
             this.onSignInResolvers.push(resolve);
             this.onSignInRejectors.push(reject);
         });
-        return promise;
     }
 
     /**
@@ -129,15 +129,19 @@ export class AuthenticationContext {
      * authenticationContext.signOut(postLogoutRedirectUri);
      * ```
      *
-     * @param postLogoutRedirectUri - the uri where the user will be redirected to after signing out.
+     * @param postLogoutRedirectUri - the uri string where the user will be redirected to after signing out.
      */
     public async signOut(postLogoutRedirectUri: string | null = null) {
-        const idTokenHint = await this.getIdToken();
-        this.revokeTokens()
-            .then(async () => {
-                await this.endSession(postLogoutRedirectUri, idTokenHint);
-                this.deleteTokens();
-            });
+        await this.fetchConfiguration();
+        let idTokenHint: string | null = null;
+        try {
+            idTokenHint = await this.getIdToken();
+        } catch (e) {
+            console.warn('@elfsquad/authentication: Could not retrieve id token for sign-out hint', e);
+        }
+        await this.revokeTokens();
+        this.deleteTokens();
+        await this.endSession(postLogoutRedirectUri, idTokenHint);
     }
 
     private deleteTokens() {
@@ -146,16 +150,27 @@ export class AuthenticationContext {
         TokenStore.deleteTokenResponse();
     }
 
-    private revokeTokens(): Promise<any> {
+    private revokeTokens(): Promise<void> {
+        // Promise.allSettled is ES2020 and this package targets ES2015, so we
+        // use Promise.all with per-promise .catch() wrappers instead.  Each
+        // revocation failure is logged here and then swallowed so the other
+        // revocation and the rest of signOut() always proceed.
         return Promise.all([
-          this.revokeRefreshToken(),
-          this.revokeAccessToken(),
-        ]);
+            this.revokeRefreshToken().catch((e) => {
+                console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+            }),
+            this.revokeAccessToken().catch((e) => {
+                console.error('@elfsquad/authentication: Token revocation failed during sign-out', e);
+            }),
+        ]).then(() => undefined);
     }
 
     private revokeRefreshToken(): Promise<any> {
+        if (this.options.revokeRefreshToken) {
+            return this.options.revokeRefreshToken();
+        }
         if (!TokenStore.hasRefreshToken()) {
-          return Promise.resolve();
+            return Promise.resolve();
         }
         return this.revokeToken(TokenStore.getRefreshToken(), 'refresh_token');
     }
@@ -205,20 +220,12 @@ export class AuthenticationContext {
      *
      * @returns promise that resolves with a boolean indicating if the user is signed in.
      */
-    public isSignedIn(): Promise<boolean> {
-        let promise = new Promise<boolean>((resolve, _) => {
-            if (this.isInitialized) {
-                resolve(this.validateAccessTokenResponse());
-                return;
-            }
-
-            this.signedInResolvers.push(resolve);
-        });
-
-        return promise;
+    public async isSignedIn(): Promise<boolean> {
+        await this.ensureInitialized();
+        return this.validateAccessTokenResponse();
     }
 
-    private _refreshTokenPromise: Promise<string> = null;
+    private _refreshTokenPromise: Promise<string> | null = null;
     /**
      * This method can be used to get the access token. This method will
      * automatically refresh the access token if it has expired and a
@@ -235,24 +242,28 @@ export class AuthenticationContext {
      * @returns promise that resolves with the access token.
      */
     public async getAccessToken(): Promise<string> {
-        await this.waitFor(() => this.isInitialized);
+        await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve(this.accessTokenResponse.accessToken);
+            return this.accessTokenResponse.accessToken;
         }
 
-        if (!TokenStore.hasRefreshToken()) {
-            return Promise.resolve(null);
+        if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
+            throw new Error('@elfsquad/authentication: Access token expired and no refresh source is available. Ensure offline_access is in the requested scope or provide a refreshAccessToken callback.');
         }
 
         if (this._refreshTokenPromise) {
             return this._refreshTokenPromise;
         }
 
-        this._refreshTokenPromise = this.refreshAccessToken();
-        let accessToken = await this._refreshTokenPromise;
-        this._refreshTokenPromise = null;
-        return accessToken;
+        this._refreshTokenPromise = (async () => {
+            try {
+                return await this.refreshAccessToken();
+            } finally {
+                this._refreshTokenPromise = null;
+            }
+        })();
+        return this._refreshTokenPromise;
     }
 
     /**
@@ -271,28 +282,23 @@ export class AuthenticationContext {
      * @returns promise that resolves with the id token.
      */
     public async getIdToken(): Promise<string> {
-        if (!this.configuration) {
-            console.error('@elfsquad/authentication: No service configuration found');
-            return Promise.resolve(null);
-        }
+        await this.ensureInitialized();
 
         if (this.validateAccessTokenResponse()) {
-            return Promise.resolve(this.accessTokenResponse.idToken);
+            return this.accessTokenResponse.idToken;
         }
 
-        if (!TokenStore.hasRefreshToken()) {
-            console.log('@elfsquad/authentication: No refresh token found');
-            return Promise.resolve(null);
-        }
-
-        await this.refreshAccessToken();
-        return Promise.resolve(this.accessTokenResponse.idToken);
+        // Delegate to getAccessToken() so the shared _refreshTokenPromise gate is used,
+        // preventing duplicate refresh calls when getAccessToken() and getIdToken() are
+        // awaited concurrently.
+        await this.getAccessToken();
+        return this.accessTokenResponse.idToken;
     }
 
     /**
-     * This method can be used to persist date in local storage, which
+     * This method can be used to persist data in local storage, which
      * can be used to save data between sign in attempts. This can
-     * be useful, for example, to save the url the current url before
+     * be useful, for example, to save the current url before
      * the user is redirected to the login page.
      *
      * This method user the oauth2 state parameter, which means the data
@@ -314,7 +320,7 @@ export class AuthenticationContext {
      * @param data - the data that will be persisted in local storage.
      */
     public setState(data: any) {
-      this.state = (Math.random() + 1).toString(36).substring(2);
+      this.state = new DefaultCrypto().generateRandom(10);
       localStorage.setItem(`elfsquad-${this.state}`, JSON.stringify(data));
     }
 
@@ -350,9 +356,21 @@ export class AuthenticationContext {
     }
 
     private async refreshAccessToken(): Promise<string> {
-        if (!this.configuration) {
-            return null;
+        if (this.options.refreshAccessToken) {
+            const previousIdToken = this.accessTokenResponse?.idToken;
+            const result = await this.options.refreshAccessToken();
+            this.accessTokenResponse = new TokenResponse({
+                access_token: result.accessToken,
+                expires_in: result.expiresIn.toString(),
+                issued_at: Math.floor(Date.now() / 1000),
+                token_type: 'bearer',
+                id_token: result.idToken ?? previousIdToken,
+            });
+            TokenStore.saveTokenResponse(this.accessTokenResponse);
+            return result.accessToken;
         }
+
+        await this.fetchConfiguration();
 
         const request = new TokenRequest({
             client_id: this.options.clientId,
@@ -367,14 +385,31 @@ export class AuthenticationContext {
             .performTokenRequest(this.configuration, request)
 
         this.accessTokenResponse = response;
-        TokenStore.saveRefreshToken(response.refreshToken);
+        if (response.refreshToken) {
+            TokenStore.saveRefreshToken(response.refreshToken);
+        }
         TokenStore.saveTokenResponse(response);
         return response.accessToken;
     }
 
     private async fetchConfiguration(): Promise<void> {
-        if (!!this.configuration) { return; }
-        this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
+        if (this.configuration) { return; }
+        if (this.options.fetchServiceConfiguration) {
+            this.configuration = await this.options.fetchServiceConfiguration();
+        } else {
+            this.configuration = await AuthorizationServiceConfiguration.fetchFromIssuer(this.loginUrl, this.fetchRequestor);
+        }
+    }
+
+    private ensureInitialized(): Promise<void> {
+        if (!this._initPromise) {
+            this._initPromise = this.initialize().catch((error) => {
+                // Clear cached promise on failure so subsequent calls can retry initialization.
+                this._initPromise = null;
+                throw error;
+            });
+        }
+        return this._initPromise;
     }
 
     private makeAuthorizationRequest(options: object) {
@@ -395,23 +430,37 @@ export class AuthenticationContext {
 
     private async onAuthorization(request: AuthorizationRequest, response: AuthorizationResponse, error: AuthorizationError): Promise<void> {
         const locationVariable = window.location.href;
-        this.state = new RegExp('state=(.*?)(&|$)').exec(locationVariable)[1]
+        const parsedUrl = new URL(locationVariable);
+        const params = this.options.responseMode === 'fragment'
+            ? new URLSearchParams(parsedUrl.hash.slice(1))
+            : parsedUrl.searchParams;
+        this.state = params.get('state') ?? undefined;
+        this.sanitizeRedirectUrl();
 
-        location.hash = '';
+        if (!this.state) {
+            const err = new Error("Missing 'state' parameter in authorization response URL.");
+            this.callSignInRejectors(err);
+            throw err;
+        }
         if (!!error) {
-            for (let onSignInRejector of this.onSignInRejectors) {
-                onSignInRejector(error);
-            }
-            return;
+            const err = error as unknown as Error;
+            this.callSignInRejectors(err);
+            throw err;
         }
 
         if (!response) { return; }
 
         let code = response.code;
-        if (!code){
+        if (!code) {
             code = this.options.responseMode == 'fragment'
-                ? new RegExp('#code=(.*?)&').exec(locationVariable)[1]
-                : new URL(location.href).searchParams.get('code');
+                ? new URLSearchParams(new URL(locationVariable).hash.slice(1)).get('code')
+                : new URL(locationVariable).searchParams.get('code');
+        }
+
+        if (!code) {
+            const err = new Error('No authorization code found in the redirect URL.');
+            this.callSignInRejectors(err);
+            throw err;
         }
 
         let tokenRequest = new TokenRequest({
@@ -430,78 +479,106 @@ export class AuthenticationContext {
             await this.fetchConfiguration();
         }
 
-        this.accessTokenResponse = await this.tokenHandler
+        const tokenResponse = await this.tokenHandler
             .performTokenRequest(this.configuration, tokenRequest);
-        TokenStore.saveRefreshToken(this.accessTokenResponse.refreshToken);
+
+        const refreshToken = tokenResponse.refreshToken;
+        if (this.options.storeRefreshToken) {
+            if (!refreshToken) {
+                const err = new Error('No refresh token returned by the authorization server. Ensure offline_access is in the requested scope.');
+                this.callSignInRejectors(err);
+                throw err;
+            }
+            // Persist server-side before committing the token to memory.
+            // If this rejects, this.accessTokenResponse stays null so the
+            // instance is not left in a half-signed-in state.
+            await this.options.storeRefreshToken(refreshToken);
+            tokenResponse.refreshToken = undefined;
+        } else if (!this.options.refreshAccessToken && refreshToken) {
+            TokenStore.saveRefreshToken(refreshToken);
+        }
+        this.accessTokenResponse = tokenResponse;
         TokenStore.saveTokenResponse(this.accessTokenResponse);
         this.callSignInResolvers();
     }
 
     private async initialize(): Promise<void> {
-        await this.fetchConfiguration();
-
         if (TokenStore.hasTokenResponse()) {
             this.accessTokenResponse = TokenStore.getTokenResponse();
         }
 
-        // If the access token is still valid, we do not need to refresh
-        if (this.validateAccessTokenResponse()) {
-            this.isInitialized = true;
-            this.callSignInResolvers();
-            this.callSignedInResolvers();
-            return;
-        }
-
-        if (TokenStore.hasRefreshToken()) {
-            await this.fetchConfiguration();
-            this.refreshAccessToken()
-                .then(() => {
-                    this.callSignInResolvers();
-                })
-                .catch((e) => {
-                    console.error('Failed to refresh access token', e);
-                    this.deleteTokens();
-                })
-                .finally(() => {
-                    this.isInitialized = true;
-                    this.callSignedInResolvers();
-                });
-
-            return;
-        }
-
-        this.completeAuthorizationRequest();
-    }
-
-    private completeAuthorizationRequest(): void {
-        this.authorizationHandler.completeAuthorizationRequest()
-            .then(async (result) => {
-                this.isInitialized = true;
-                if (!!result) {
-                    await this.onAuthorization(result.request, result.response, result.error);
+        // Eagerly migrate any refresh token from localStorage to secure storage.
+        // Check both the dedicated key and the token response (legacy sessions may
+        // have refresh_token embedded in elfsquad_token_response).
+        if (this.options.storeRefreshToken) {
+            const refreshToken = TokenStore.getRefreshToken() ?? this.accessTokenResponse?.refreshToken;
+            if (refreshToken) {
+                try {
+                    await this.options.storeRefreshToken(refreshToken);
+                    TokenStore.deleteRefreshToken();
+                    if (this.accessTokenResponse?.refreshToken) {
+                        this.accessTokenResponse.refreshToken = undefined;
+                        TokenStore.saveTokenResponse(this.accessTokenResponse);
+                    }
+                } catch (e) {
+                    console.error('@elfsquad/authentication: Failed to migrate refresh token', e);
                 }
-                this.callSignedInResolvers();
-            });
+            }
+        }
+
+        if (this.validateAccessTokenResponse()) {
+            this.callSignInResolvers();
+            return;
+        }
+
+        if (TokenStore.hasRefreshToken() || this.options.refreshAccessToken) {
+            try {
+                await this.refreshAccessToken();
+                this.callSignInResolvers();
+                return;
+            } catch (e) {
+                console.error('Failed to refresh access token', e);
+                this.deleteTokens();
+            }
+        }
+
+        const result = await this.authorizationHandler.completeAuthorizationRequest();
+        if (result) {
+            await this.onAuthorization(result.request, result.response, result.error);
+        }
     }
 
-    private callSignedInResolvers(): void {
-        for (let signedInResolver of this.signedInResolvers) {
-            signedInResolver(this.validateAccessTokenResponse());
+    private sanitizeRedirectUrl(): void {
+        const oauthParams = ['code', 'state', 'session_state', 'iss'];
+        const url = new URL(window.location.href);
+
+        // Always strip OAuth params from the query string regardless of responseMode,
+        // so values returned in an unexpected location don't linger in history/referrers.
+        oauthParams.forEach(p => url.searchParams.delete(p));
+
+        // Also strip OAuth params from the fragment in all modes — but only rewrite
+        // it when OAuth params are actually present to avoid mangling hash-based routes
+        // (e.g. #/dashboard would become #%2Fdashboard= after URLSearchParams round-trip).
+        const hashParams = new URLSearchParams(url.hash.slice(1));
+        if (oauthParams.some(p => hashParams.has(p))) {
+            oauthParams.forEach(p => hashParams.delete(p));
+            const remaining = hashParams.toString();
+            url.hash = remaining ? remaining : '';
         }
+
+        window.history.replaceState(null, '', url.toString());
     }
 
     private callSignInResolvers(): void {
-        for (let onSignInResolver of this.onSignInResolvers) {
-            onSignInResolver();
-        }
+        const resolvers = this.onSignInResolvers.splice(0);
+        this.onSignInRejectors.splice(0);
+        for (const resolve of resolvers) { resolve(); }
     }
 
-    private sleep(ms: number): Promise<void> {
-      return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    private async waitFor(f: () => boolean): Promise<void> {
-      while(!f()) await this.sleep(200);
+    private callSignInRejectors(error: Error): void {
+        const rejectors = this.onSignInRejectors.splice(0);
+        this.onSignInResolvers.splice(0);
+        for (const reject of rejectors) { reject(error); }
     }
 }
 
@@ -516,6 +593,11 @@ class NoHashQueryStringUtils extends BasicQueryStringUtils {
 class AuthorizationHandler extends RedirectRequestHandler {
     constructor(responseMode: 'query' | 'fragment') {
         super(new LocalStorageBackend(), new NoHashQueryStringUtils(responseMode),  window.location, new DefaultCrypto());
+    }
+
+    // Exposes the protected base-class method publicly so AuthenticationContext can call it.
+    public performAuthorizationRequest(configuration: AuthorizationServiceConfiguration, request: AuthorizationRequest): void {
+        super.performAuthorizationRequest(configuration, request);
     }
 
     public completeAuthorizationRequest(): Promise<AuthorizationRequestResponse | null> {

@@ -1,32 +1,292 @@
 import 'jest';
-import * as fetchMock from 'fetch-mock'
+import { AuthorizationServiceConfiguration } from '@openid/appauth/built/authorization_service_configuration';
 import { AuthenticationContext } from '..';
 
+const fakeConfig = new AuthorizationServiceConfiguration({
+    authorization_endpoint: 'https://test/auth',
+    token_endpoint: 'https://test/token',
+    revocation_endpoint: 'https://test/revoke',
+    end_session_endpoint: 'https://test/logout',
+    userinfo_endpoint: 'https://test/userinfo',
+});
 
 describe('AuthenticationContext', function() {
 
-    let authenticationContext;
+    let authenticationContext: AuthenticationContext;
 
     beforeEach(() => {
+        localStorage.clear();
         authenticationContext = new AuthenticationContext({
             clientId: 'CLIENT_ID',
-            redirectUri: 'REDIRECT_URI'
+            redirectUri: 'REDIRECT_URI',
+            fetchServiceConfiguration: async () => fakeConfig,
         });
 
         (authenticationContext as any).accessTokenResponse = {
             isValid: () => true
         };
+        (authenticationContext as any).configuration = fakeConfig;
 
-        (authenticationContext as any).configuration = {'something': 'here'};
-        (authenticationContext as any).refreshToken = {};
+        // Skip the async initialization chain for tests that don't exercise it.
+        (authenticationContext as any)._initPromise = Promise.resolve();
+    });
+
+    afterEach(() => {
+        localStorage.clear();
+        // Reset window globals mutated by onAuthorization / sanitizeRedirectUrl tests.
+        (window as any).location = {};
+        (window.history as any).replaceState = () => {};
+        jest.restoreAllMocks();
+    });
+
+    describe('constructor validation', function() {
+
+        const expectedError = 'storeRefreshToken, refreshAccessToken, and revokeRefreshToken must all be provided together or not at all.';
+
+        it('throws when only storeRefreshToken is provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('throws when only refreshAccessToken is provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                refreshAccessToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('throws when only revokeRefreshToken is provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                revokeRefreshToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('throws when only two of the three proxy options are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+            })).toThrow(expectedError);
+        });
+
+        it('does not throw when all three proxy options are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            })).not.toThrow();
+        });
+
+        it('does not throw when none of the proxy options are provided', () => {
+            expect(() => new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+            })).not.toThrow();
+        });
+
     });
 
     describe('signOut', function() {
 
-        it('should not be logged in', async() =>{
+        it('should not be logged in', async () => {
             expect(await authenticationContext.isSignedIn()).toBe(true);
-            authenticationContext.signOut();
+            await authenticationContext.signOut();
             expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('completes sign-out even when getIdToken throws due to expired token with no refresh source', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            warnSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('calls revokeRefreshToken option instead of built-in localStorage revocation when provided', async () => {
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            await authenticationContext.signOut();
+
+            expect(revokeRefreshTokenMock).toHaveBeenCalled();
+        });
+
+        it('still clears tokens and redirects when both revokeRefreshToken and revokeAccessToken reject', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh failed'));
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            errorSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('still clears local tokens and redirects when revokeRefreshToken rejects', async () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: jest.fn().mockRejectedValue(new Error('network error')),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true, accessToken: 'AT' };
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            errorSpy.mockRestore();
+
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('does not call built-in revocation when revokeRefreshToken option is provided', async () => {
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: jest.fn(),
+                refreshAccessToken: jest.fn(),
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            (authenticationContext as any).configuration = fakeConfig;
+            (authenticationContext as any)._initPromise = Promise.resolve();
+            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: performRevokeTokenRequestMock };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
+
+            await authenticationContext.signOut();
+
+            const revokeCallsForRefreshToken = performRevokeTokenRequestMock.mock.calls
+                .filter(([, req]) => req?.tokenTypeHint === 'refresh_token');
+            expect(revokeCallsForRefreshToken).toHaveLength(0);
+        });
+
+    });
+
+    describe('revokeTokens', function() {
+
+        it('starts both revocations concurrently before either settles', async () => {
+            // Use manually-controlled Promises so we can assert both private methods
+            // were called before either resolves — proving parallel dispatch, not
+            // sequential awaiting.
+            let resolveRefresh!: () => void;
+            let resolveAccess!: () => void;
+            const refreshPromise = new Promise<void>(r => { resolveRefresh = r; });
+            const accessPromise  = new Promise<void>(r => { resolveAccess  = r; });
+
+            const refreshSpy = jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockReturnValue(refreshPromise);
+            const accessSpy  = jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockReturnValue(accessPromise);
+
+            const revokeTokensPromise = (authenticationContext as any).revokeTokens();
+
+            // Both must be called synchronously (before any promise settles),
+            // proving they were started in parallel rather than awaited in sequence.
+            expect(refreshSpy).toHaveBeenCalledTimes(1);
+            expect(accessSpy).toHaveBeenCalledTimes(1);
+
+            resolveRefresh();
+            resolveAccess();
+            await revokeTokensPromise;
+        });
+
+        it('still runs revokeAccessToken when revokeRefreshToken rejects', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh revocation failed'));
+            const accessSpy = jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockResolvedValue(undefined);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            errorSpy.mockRestore();
+
+            expect(accessSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('still runs revokeRefreshToken when revokeAccessToken rejects', async () => {
+            const refreshSpy = jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockResolvedValue(undefined);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access revocation failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            errorSpy.mockRestore();
+
+            expect(refreshSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it('resolves without throwing even when both revocations reject', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(new Error('refresh failed'));
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(new Error('access failed'));
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await expect((authenticationContext as any).revokeTokens()).resolves.toBeUndefined();
+            errorSpy.mockRestore();
+        });
+
+        it('logs one console.error per revocation failure', async () => {
+            const refreshError = new Error('refresh failed');
+            const accessError  = new Error('access failed');
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken')
+                .mockRejectedValue(refreshError);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken')
+                .mockRejectedValue(accessError);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+
+            expect(errorSpy).toHaveBeenCalledTimes(2);
+            expect(errorSpy).toHaveBeenCalledWith(
+                '@elfsquad/authentication: Token revocation failed during sign-out',
+                refreshError,
+            );
+            expect(errorSpy).toHaveBeenCalledWith(
+                '@elfsquad/authentication: Token revocation failed during sign-out',
+                accessError,
+            );
+            errorSpy.mockRestore();
+        });
+
+        it('does not log when both revocations succeed', async () => {
+            jest.spyOn(authenticationContext as any, 'revokeRefreshToken').mockResolvedValue(undefined);
+            jest.spyOn(authenticationContext as any, 'revokeAccessToken').mockResolvedValue(undefined);
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await (authenticationContext as any).revokeTokens();
+            expect(errorSpy).not.toHaveBeenCalled();
+            errorSpy.mockRestore();
         });
 
     });
@@ -44,14 +304,576 @@ describe('AuthenticationContext', function() {
             expect(accessToken).toBe(fakeAccessToken);
         });
 
-        it('refreshes the accessToken if it is not longer valid', () => {
-
-            const refreshAccessTokenMock = jest.fn();
+        it('refreshes the accessToken if it is no longer valid', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
+            const refreshAccessTokenMock = jest.fn().mockResolvedValue('NEW_TOKEN');
             (authenticationContext as any).refreshAccessToken = refreshAccessTokenMock;
 
-            authenticationContext.getAccessToken().then(() => {
-                expect(refreshAccessTokenMock).toHaveBeenCalled();
-            });            
+            await authenticationContext.getAccessToken();
+            expect(refreshAccessTokenMock).toHaveBeenCalled();
+        });
+
+        it('clears _refreshTokenPromise after failure so a subsequent call retries', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            localStorage.setItem('elfsquad_refresh_token', 'STORED_TOKEN');
+            const refreshAccessTokenMock = jest.fn()
+                .mockRejectedValueOnce(new Error('network error'))
+                .mockResolvedValueOnce('RETRY_TOKEN');
+            (authenticationContext as any).refreshAccessToken = refreshAccessTokenMock;
+
+            await expect(authenticationContext.getAccessToken()).rejects.toThrow('network error');
+            const token = await authenticationContext.getAccessToken();
+            expect(token).toBe('RETRY_TOKEN');
+            expect(refreshAccessTokenMock).toHaveBeenCalledTimes(2);
+        });
+
+        it('exposes idToken returned by custom refreshAccessToken', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'CUSTOM_TOKEN', expiresIn: 3600, idToken: 'CUSTOM_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            await authenticationContext.getAccessToken();
+            expect(await authenticationContext.getIdToken()).toBe('CUSTOM_ID_TOKEN');
+        });
+
+        it('preserves previous idToken when custom refreshAccessToken does not return one', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600 });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false, idToken: 'ORIGINAL_ID_TOKEN' };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            await authenticationContext.getAccessToken();
+            expect(await authenticationContext.getIdToken()).toBe('ORIGINAL_ID_TOKEN');
+        });
+
+        it('calls custom refreshAccessToken option when provided and token is expired', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'CUSTOM_TOKEN', expiresIn: 3600 });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const token = await authenticationContext.getAccessToken();
+            expect(refreshMock).toHaveBeenCalled();
+            expect(token).toBe('CUSTOM_TOKEN');
+        });
+
+    });
+
+    describe('onAuthorization', function() {
+
+        let fakeRequest: any;
+        let fakeResponse: any;
+        let fakeTokenResponse: any;
+
+        beforeEach(() => {
+            fakeTokenResponse = {
+                accessToken: 'ACCESS_TOKEN',
+                refreshToken: 'REFRESH_TOKEN',
+                toJson: () => ({}),
+                isValid: () => true,
+            };
+            (authenticationContext as any).tokenHandler = {
+                performTokenRequest: jest.fn().mockResolvedValue(fakeTokenResponse),
+            };
+            fakeRequest = { internal: {} };
+            fakeResponse = { code: 'AUTH_CODE' };
+
+            // onAuthorization reads state from window.location.href; provide a valid one.
+            // Spy before deleting location, as jsdom loses window.history after deletion.
+            jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
+            delete (window as any).location;
+            (window as any).location = { href: 'https://test/callback#state=TEST_STATE', hash: '#state=TEST_STATE' };
+        });
+
+        it('rejects onSignIn when state parameter is missing from the redirect URL', async () => {
+            (window as any).location = { href: 'https://test/callback#code=AUTH_CODE', hash: '#code=AUTH_CODE' };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+            await Promise.resolve();
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow("Missing 'state' parameter");
+
+            await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
+        });
+
+        it('rejects onSignIn when state parameter is empty in the redirect URL', async () => {
+            (window as any).location = { href: 'https://test/callback#state=&code=AUTH_CODE', hash: '#state=&code=AUTH_CODE' };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+            await Promise.resolve();
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow("Missing 'state' parameter");
+
+            await expect(signInPromise).rejects.toThrow("Missing 'state' parameter");
+        });
+
+        it('rejects onSignIn via ensureInitialized when initialize processes a bad redirect (regression)', async () => {
+            // Reproduces the bug: onSignIn() suspends at await ensureInitialized(), initialize()
+            // calls onAuthorization() which detects missing state and previously only called
+            // callSignInRejectors() with empty arrays, then returned normally — leaving onSignIn()
+            // waiting forever. Now onAuthorization() throws so the rejection propagates through
+            // initialize() → ensureInitialized() → onSignIn().
+            (window as any).location = { href: 'https://test/callback#code=AUTH_CODE', hash: '#code=AUTH_CODE' };
+            (authenticationContext as any)._initPromise = null;
+            (authenticationContext as any).accessTokenResponse = null;
+            (authenticationContext as any).authorizationHandler = {
+                completeAuthorizationRequest: jest.fn().mockResolvedValue({
+                    request: fakeRequest,
+                    response: fakeResponse,
+                    error: null,
+                }),
+            };
+
+            await expect(authenticationContext.onSignIn()).rejects.toThrow("Missing 'state' parameter");
+        });
+
+        it('calls storeRefreshToken instead of saving to localStorage when provided', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.storeRefreshToken = storeRefreshTokenMock;
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            expect(storeRefreshTokenMock).toHaveBeenCalledWith('REFRESH_TOKEN');
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
+        });
+
+        it('does not store refresh_token in elfsquad_token_response when storeRefreshToken is provided', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.storeRefreshToken = storeRefreshTokenMock;
+            fakeTokenResponse.toJson = function() {
+                return { access_token: 'ACCESS_TOKEN', refresh_token: this.refreshToken };
+            };
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            const stored = JSON.parse(localStorage.getItem('elfsquad_token_response') || '{}');
+            expect(stored.refresh_token).toBeUndefined();
+        });
+
+        it('does not save refresh token to localStorage when only refreshAccessToken is provided', async () => {
+            (authenticationContext as any).options.refreshAccessToken = jest.fn();
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
+        });
+
+        it('saves refresh token to localStorage when neither callback is provided', async () => {
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBe('REFRESH_TOKEN');
+        });
+
+        it('rejects onSignIn when storeRefreshToken is provided but no refresh token was returned', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            (authenticationContext as any).options.storeRefreshToken = storeRefreshTokenMock;
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            fakeTokenResponse.refreshToken = undefined;
+
+            const signInPromise = authenticationContext.onSignIn();
+            await Promise.resolve();
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow('No refresh token returned');
+
+            await expect(signInPromise).rejects.toThrow('No refresh token returned');
+            expect(storeRefreshTokenMock).not.toHaveBeenCalled();
+        });
+
+        it('does not set accessTokenResponse in memory when storeRefreshToken rejects', async () => {
+            (authenticationContext as any).options.storeRefreshToken = jest.fn().mockRejectedValue(new Error('network error'));
+            (authenticationContext as any).accessTokenResponse = null;
+
+            await expect(
+                (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null)
+            ).rejects.toThrow('network error');
+
+            expect((authenticationContext as any).accessTokenResponse).toBeNull();
+            expect(await authenticationContext.isSignedIn()).toBe(false);
+        });
+
+        it('does not save to localStorage when neither callback is provided and refresh token is absent', async () => {
+            fakeTokenResponse.refreshToken = undefined;
+
+            await (authenticationContext as any).onAuthorization(fakeRequest, fakeResponse, null);
+
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
+        });
+
+    });
+
+    describe('initialize migration', function() {
+
+        it('calls storeRefreshToken with existing token and removes it from localStorage', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: storeRefreshTokenMock,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
+
+            await authenticationContext.isSignedIn();
+
+            expect(storeRefreshTokenMock).toHaveBeenCalledWith('EXISTING_TOKEN');
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBeNull();
+        });
+
+        it('keeps token in localStorage if storeRefreshToken throws', async () => {
+            const storeRefreshTokenMock = jest.fn().mockRejectedValue(new Error('Network error'));
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: storeRefreshTokenMock,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            localStorage.setItem('elfsquad_refresh_token', 'EXISTING_TOKEN');
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.isSignedIn();
+            errorSpy.mockRestore();
+
+            expect(localStorage.getItem('elfsquad_refresh_token')).toBe('EXISTING_TOKEN');
+            expect(storeRefreshTokenMock).toHaveBeenCalledWith('EXISTING_TOKEN');
+        });
+
+        it('migrates refresh token embedded in token response and scrubs it from localStorage', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: storeRefreshTokenMock,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
+            });
+            // Simulate a legacy session: valid access token with refresh_token embedded in the response
+            (authenticationContext as any).accessTokenResponse = {
+                isValid: () => true,
+                refreshToken: 'EMBEDDED_REFRESH_TOKEN',
+            };
+
+            await authenticationContext.isSignedIn();
+
+            expect(storeRefreshTokenMock).toHaveBeenCalledWith('EMBEDDED_REFRESH_TOKEN');
+            // refreshToken must be scrubbed from the in-memory response
+            expect((authenticationContext as any).accessTokenResponse.refreshToken).toBeUndefined();
+        });
+
+        it('does not call storeRefreshToken when no token is in localStorage', async () => {
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                storeRefreshToken: storeRefreshTokenMock,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+
+            await authenticationContext.isSignedIn();
+
+            expect(storeRefreshTokenMock).not.toHaveBeenCalled();
+        });
+
+    });
+
+    describe('getIdToken', function() {
+
+        it('returns the id token after refreshing when the access token is expired', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600, idToken: 'NEW_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const idToken = await authenticationContext.getIdToken();
+
+            expect(refreshMock).toHaveBeenCalledTimes(1);
+            expect(idToken).toBe('NEW_ID_TOKEN');
+        });
+
+        it('deduplicates concurrent getAccessToken and getIdToken refresh calls', async () => {
+            const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600, idToken: 'NEW_ID_TOKEN' });
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshMock,
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+
+            const [accessToken, idToken] = await Promise.all([
+                authenticationContext.getAccessToken(),
+                authenticationContext.getIdToken(),
+            ]);
+
+            expect(refreshMock).toHaveBeenCalledTimes(1);
+            expect(accessToken).toBe('NEW_TOKEN');
+            expect(idToken).toBe('NEW_ID_TOKEN');
+        });
+
+    });
+
+    describe('initialize', function() {
+
+        it('falls through to completeAuthorizationRequest when refreshAccessToken fails', async () => {
+            const completeAuthMock = jest.fn().mockResolvedValue(null);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: jest.fn().mockRejectedValue(new Error('401 Unauthorized')),
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
+
+            const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+            await authenticationContext.isSignedIn();
+            errorSpy.mockRestore();
+
+            expect(completeAuthMock).toHaveBeenCalled();
+        });
+
+        it('does not call completeAuthorizationRequest when refreshAccessToken succeeds', async () => {
+            const completeAuthMock = jest.fn().mockResolvedValue(null);
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: jest.fn().mockResolvedValue({ accessToken: 'TOKEN', expiresIn: 3600 }),
+                storeRefreshToken: jest.fn(),
+                revokeRefreshToken: jest.fn(),
+            });
+            (authenticationContext as any).authorizationHandler = { completeAuthorizationRequest: completeAuthMock };
+
+            await authenticationContext.isSignedIn();
+
+            expect(completeAuthMock).not.toHaveBeenCalled();
+        });
+
+    });
+
+    describe('onSignIn', function() {
+
+        it('resolves immediately when already signed in after initialization completes', async () => {
+            let initResolve: () => void;
+            const initPromise = new Promise<void>(r => { initResolve = r; });
+            (authenticationContext as any)._initPromise = null;
+            (authenticationContext as any).ensureInitialized = () => {
+                (authenticationContext as any)._initPromise = initPromise;
+                return initPromise;
+            };
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+
+            const signInPromise = authenticationContext.onSignIn();
+
+            // Not resolved yet — init hasn't finished
+            let resolved = false;
+            signInPromise.then(() => { resolved = true; });
+            await Promise.resolve();
+            expect(resolved).toBe(false);
+
+            // Simulate init completing with a valid token
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true };
+            (authenticationContext as any).callSignInResolvers();
+            initResolve!();
+            await signInPromise;
+            expect(resolved).toBe(true);
+        });
+
+    });
+
+    describe('BFF round-trip', function() {
+
+        it('fast-paths on valid cached token, refreshes on expiry, and revokes on sign-out', async () => {
+            // --- setup ---
+            const refreshAccessTokenMock = jest.fn()
+                .mockResolvedValueOnce({ accessToken: 'REFRESHED_TOKEN', expiresIn: 3600, idToken: 'ID_TOKEN' });
+            const storeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+            const revokeRefreshTokenMock = jest.fn().mockResolvedValue(undefined);
+
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                fetchServiceConfiguration: async () => fakeConfig,
+                refreshAccessToken: refreshAccessTokenMock,
+                storeRefreshToken: storeRefreshTokenMock,
+                revokeRefreshToken: revokeRefreshTokenMock,
+            });
+
+            // Simulate initialize() fast-path: valid token already in memory, no network call needed.
+            (authenticationContext as any).accessTokenResponse = { isValid: () => true, accessToken: 'CACHED_TOKEN', idToken: 'CACHED_ID_TOKEN' };
+            (authenticationContext as any)._initPromise = Promise.resolve();
+            (authenticationContext as any).configuration = fakeConfig;
+
+            // Fast-path: valid token returned without calling refreshAccessToken.
+            const firstToken = await authenticationContext.getAccessToken();
+            expect(firstToken).toBe('CACHED_TOKEN');
+            expect(refreshAccessTokenMock).not.toHaveBeenCalled();
+
+            // Token expires.
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false, idToken: 'CACHED_ID_TOKEN' };
+
+            // Refresh: custom callback invoked, new token returned.
+            const refreshedToken = await authenticationContext.getAccessToken();
+            expect(refreshedToken).toBe('REFRESHED_TOKEN');
+            expect(refreshAccessTokenMock).toHaveBeenCalledTimes(1);
+
+            // ID token preserved from refresh response.
+            expect(await authenticationContext.getIdToken()).toBe('ID_TOKEN');
+
+            // Sign-out: revokeRefreshToken callback invoked for the refresh token;
+            // access token is still revoked via the built-in path.
+            const performRevokeTokenRequestMock = jest.fn().mockResolvedValue(true);
+            (authenticationContext as any).tokenHandler = { performRevokeTokenRequest: performRevokeTokenRequestMock };
+            jest.spyOn(window.history, 'replaceState').mockImplementation(() => {});
+            await authenticationContext.signOut();
+            expect(revokeRefreshTokenMock).toHaveBeenCalled();
+            const refreshTokenRevocations = performRevokeTokenRequestMock.mock.calls
+                .filter(([, req]) => req?.tokenTypeHint === 'refresh_token');
+            expect(refreshTokenRevocations).toHaveLength(0);
+        });
+
+    });
+
+    describe('sanitizeRedirectUrl', function() {
+
+        let sanitized: string | null;
+
+        beforeEach(() => {
+            sanitized = null;
+            (window.history as any).replaceState = (_s: any, _t: any, url: string) => { sanitized = url; };
+        });
+
+        it('removes OAuth params from the fragment in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback#code=C&state=S&session_state=SS' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.hash).toBe('');
+        });
+
+        it('removes OAuth params from the query string in query mode, leaving the fragment intact', () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                responseMode: 'query',
+            });
+            (window as any).location = { href: 'https://app.example.com/callback?code=C&state=S#/dashboard' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.searchParams.get('code')).toBeNull();
+            expect(url.searchParams.get('state')).toBeNull();
+            expect(url.hash).toBe('#/dashboard');
+        });
+
+        it('preserves non-OAuth params in the fragment in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback#code=C&state=S&custom=keep' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(new URLSearchParams(url.hash.slice(1)).get('custom')).toBe('keep');
+            expect(new URLSearchParams(url.hash.slice(1)).get('code')).toBeNull();
+        });
+
+        it('strips OAuth params from the query string even in fragment mode', () => {
+            (window as any).location = { href: 'https://app.example.com/callback?code=C&state=S#state=S&code=C' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.searchParams.get('code')).toBeNull();
+            expect(url.searchParams.get('state')).toBeNull();
+            expect(url.hash).toBe('');
+        });
+
+        it('strips OAuth params from the fragment in query mode', () => {
+            authenticationContext = new AuthenticationContext({
+                clientId: 'CLIENT_ID',
+                redirectUri: 'REDIRECT_URI',
+                responseMode: 'query',
+            });
+            (window as any).location = { href: 'https://app.example.com/callback?foo=bar#code=C&state=S' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.hash).toBe('');
+        });
+
+        it('leaves a hash-based client-side route untouched in fragment mode when no OAuth params are present', () => {
+            (window as any).location = { href: 'https://app.example.com/#/dashboard' };
+
+            (authenticationContext as any).sanitizeRedirectUrl();
+
+            const url = new URL(sanitized!);
+            expect(url.hash).toBe('#/dashboard');
+        });
+
+    });
+
+    describe('setState', function() {
+
+        it('generates a unique state key on each call', () => {
+            authenticationContext.setState({ redirect: '/dashboard' });
+            const state1 = (authenticationContext as any).state;
+
+            authenticationContext.setState({ redirect: '/other' });
+            const state2 = (authenticationContext as any).state;
+
+            expect(typeof state1).toBe('string');
+            expect(state1.length).toBeGreaterThan(0);
+            expect(state1).not.toBe(state2);
         });
 
     });

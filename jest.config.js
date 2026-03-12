@@ -2,17 +2,5 @@
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
-  globals: {
-    window: {
-      localStorage: {
-        getItem: () => null,
-      },
-    },
-    localStorage: {
-      getItem: () => null,
-      setItem: () => null,
-      removeItem: () => null,
-    },
-    location: {},
-  },
+  setupFiles: ["./jest.setup.ts"],
 };
