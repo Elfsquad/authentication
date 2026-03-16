@@ -249,7 +249,7 @@ export class AuthenticationContext {
         }
 
         if (!this.options.refreshAccessToken && !TokenStore.hasRefreshToken()) {
-            throw new Error('@elfsquad/authentication: Access token expired and no refresh source is available. Ensure offline_access is in the requested scope or provide a refreshAccessToken callback.');
+            return null;
         }
 
         if (this._refreshTokenPromise) {
@@ -291,7 +291,10 @@ export class AuthenticationContext {
         // Delegate to getAccessToken() so the shared _refreshTokenPromise gate is used,
         // preventing duplicate refresh calls when getAccessToken() and getIdToken() are
         // awaited concurrently.
-        await this.getAccessToken();
+        const accessToken = await this.getAccessToken();
+        if (!accessToken) {
+            return null;
+        }
         return this.accessTokenResponse.idToken;
     }
 
