@@ -103,12 +103,10 @@ describe('AuthenticationContext', function() {
             expect(await authenticationContext.isSignedIn()).toBe(false);
         });
 
-        it('completes sign-out even when getIdToken throws due to expired token with no refresh source', async () => {
+        it('completes sign-out when user is not signed in (getIdToken returns null for anonymous user)', async () => {
             (authenticationContext as any).accessTokenResponse = { isValid: () => false };
 
-            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
             await authenticationContext.signOut();
-            warnSpy.mockRestore();
 
             expect(await authenticationContext.isSignedIn()).toBe(false);
         });
@@ -302,6 +300,15 @@ describe('AuthenticationContext', function() {
 
             const accessToken = await authenticationContext.getAccessToken();
             expect(accessToken).toBe(fakeAccessToken);
+        });
+
+        it('returns null when access token is expired and no refresh source is available (anonymous user)', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            // No refresh token in localStorage, no refreshAccessToken callback
+
+            const token = await authenticationContext.getAccessToken();
+
+            expect(token).toBeNull();
         });
 
         it('refreshes the accessToken if it is no longer valid', async () => {
@@ -614,6 +621,15 @@ describe('AuthenticationContext', function() {
     });
 
     describe('getIdToken', function() {
+
+        it('returns null when access token is expired and no refresh source is available (anonymous user)', async () => {
+            (authenticationContext as any).accessTokenResponse = { isValid: () => false };
+            // No refresh token in localStorage, no refreshAccessToken callback
+
+            const idToken = await authenticationContext.getIdToken();
+
+            expect(idToken).toBeNull();
+        });
 
         it('returns the id token after refreshing when the access token is expired', async () => {
             const refreshMock = jest.fn().mockResolvedValue({ accessToken: 'NEW_TOKEN', expiresIn: 3600, idToken: 'NEW_ID_TOKEN' });
