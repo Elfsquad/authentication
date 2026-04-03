@@ -63,8 +63,7 @@ const authenticationContext = new AuthenticationContext({
       method: "POST",
       body: JSON.stringify({ token }),
     }).then(() => {}),
-  refreshAccessToken: () =>
-    fetch("/auth/refresh").then((r) => r.json()),
+  refreshAccessToken: () => fetch("/auth/refresh").then((r) => r.json()),
   revokeRefreshToken: () =>
     fetch("/auth/revoke", { method: "POST" }).then(() => {}),
 });
