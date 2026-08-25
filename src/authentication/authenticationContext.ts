@@ -10,6 +10,11 @@ import { RedirectRequestHandler } from "@openid/appauth/built/redirect_based_han
 import { TokenResponse } from "@openid/appauth/built/token_response";
 import { TokenStore } from "./tokenStore";
 
+// Applies the console policy for `@openid/appauth`, whose logging this module's flows are
+// what actually triggers. Imported here rather than relied on through the package barrel,
+// so the policy travels with the usage if the entry point ever changes.
+import "./logging";
+
 class CustomFetchRequestor {
     private requestor: FetchRequestor;
 
