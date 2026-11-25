@@ -15,6 +15,13 @@ import { TokenStore } from "./tokenStore";
 // so the policy travels with the usage if the entry point ever changes.
 import "./logging";
 
+// One name for every tab of the origin, because the tokens it guards sit under fixed localStorage keys.
+const REFRESH_LOCK_NAME = 'elfsquad-token-refresh';
+
+// How long a tab waits for another tab's renewal before renewing unguarded. A renewal is one request to the
+// identity provider; a tab that has held the lock this long is stuck, and waiting on it would freeze every tab.
+const REFRESH_LOCK_WAIT_MS = 10000;
+
 class CustomFetchRequestor {
     private requestor: FetchRequestor;
 
@@ -363,7 +370,63 @@ export class AuthenticationContext {
         return !!this.accessTokenResponse && this.accessTokenResponse.isValid();
     }
 
-    private async refreshAccessToken(): Promise<string> {
+    /**
+     * Renews the access token while no other tab of this origin does. The identity provider rotates the refresh
+     * token on every use, and a rotated token that is presented again can revoke every token of the sign-in, so
+     * two tabs renewing at once cost one of them, and often both, the session. A tab that waited takes the token
+     * the other tab stored instead of renewing again.
+     */
+    private refreshAccessToken(): Promise<string> {
+        return this.whileNoOtherTabRefreshes(async () => {
+            const stored = this.storedTokenResponse();
+            if (stored && stored.isValid()) {
+                this.accessTokenResponse = stored;
+                return stored.accessToken;
+            }
+            return this.requestAccessToken();
+        });
+    }
+
+    private storedTokenResponse(): TokenResponse | null {
+        try {
+            return TokenStore.hasTokenResponse() ? TokenStore.getTokenResponse() : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Runs `refresh` under a lock shared by every tab of the origin. The lock is an optimization of the common
+     * case, never a condition for renewing: without a lock manager (an insecure context, an older browser), when
+     * the manager refuses, or when another tab holds the lock longer than a renewal can reasonably take, the
+     * renewal runs unguarded, as it would have without the lock.
+     */
+    private async whileNoOtherTabRefreshes<T>(refresh: () => Promise<T>): Promise<T> {
+        const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+        if (!locks) {
+            return refresh();
+        }
+
+        const waiting = new AbortController();
+        const giveUp = setTimeout(() => waiting.abort(), REFRESH_LOCK_WAIT_MS);
+        let held = false;
+        try {
+            return await locks.request(REFRESH_LOCK_NAME, { signal: waiting.signal }, () => {
+                held = true;
+                clearTimeout(giveUp);
+                return refresh();
+            });
+        } catch (error) {
+            if (held) {
+                throw error;
+            }
+            return refresh();
+        } finally {
+            clearTimeout(giveUp);
+        }
+    }
+
+    private async requestAccessToken(): Promise<string> {
         if (this.options.refreshAccessToken) {
             const previousIdToken = this.accessTokenResponse?.idToken;
             const result = await this.options.refreshAccessToken();
@@ -380,17 +443,19 @@ export class AuthenticationContext {
 
         await this.fetchConfiguration();
 
-        const request = new TokenRequest({
-            client_id: this.options.clientId,
-            redirect_uri: this.options.redirectUri,
-            grant_type: GRANT_TYPE_REFRESH_TOKEN,
-            code: undefined,
-            refresh_token: TokenStore.getRefreshToken(),
-            extras: undefined
-        });
-
-        const response = await this.tokenHandler
-            .performTokenRequest(this.configuration, request)
+        const sent = TokenStore.getRefreshToken();
+        let response: TokenResponse;
+        try {
+            response = await this.requestTokenFor(sent);
+        } catch (error) {
+            // A tab that takes no lock (an older build of the application, a browser without a lock manager) can
+            // rotate the token while this request is on its way. The token it stored is then the live one.
+            const stored = TokenStore.getRefreshToken();
+            if (!stored || stored === sent) {
+                throw error;
+            }
+            response = await this.requestTokenFor(stored);
+        }
 
         this.accessTokenResponse = response;
         if (response.refreshToken) {
@@ -398,6 +463,18 @@ export class AuthenticationContext {
         }
         TokenStore.saveTokenResponse(response);
         return response.accessToken;
+    }
+
+    private requestTokenFor(refreshToken: string): Promise<TokenResponse> {
+        const request = new TokenRequest({
+            client_id: this.options.clientId,
+            redirect_uri: this.options.redirectUri,
+            grant_type: GRANT_TYPE_REFRESH_TOKEN,
+            code: undefined,
+            refresh_token: refreshToken,
+            extras: undefined
+        });
+        return this.tokenHandler.performTokenRequest(this.configuration, request);
     }
 
     private async fetchConfiguration(): Promise<void> {
