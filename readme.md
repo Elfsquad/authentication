@@ -20,6 +20,10 @@ The authentication library allows you to easily authenticate with the Elfsquad A
 - `isSignedIn` returns a promise with a boolean result that indicates if the user is signed in.
 - `getAccessToken` returns a promise that resolves into access token.
 
+## Several tabs
+
+Tabs of one origin share the stored tokens. Only one tab renews the access token at a time, and a tab that waited uses the token the other tab stored, so the identity provider sees one renewal instead of one per tab. This uses the browser's [Web Locks API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API) under the lock name `elfsquad-token-refresh`. Where the API is not available, such as on a page served over plain HTTP, each tab renews on its own.
+
 ## Examples
 
 ```js
